@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { PageHeader } from '@/components/layout/PageHeader'
+import { RemoteCover } from '@/components/RemoteCover'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { api, isTauri, toAssetUrl } from '@/lib/api'
+import { api, isTauri } from '@/lib/api'
 import type { TitleDetails } from '@/lib/types'
 
 export function TitleDetailsPage() {
@@ -24,9 +25,27 @@ export function TitleDetailsPage() {
 
   useEffect(() => {
     if (!titleId || !isTauri()) return
+    let cancelled = false
     void (async () => {
       try {
-        const data = await api.getTitleDetails(titleId)
+        let data = await api.getTitleDetails(titleId)
+        if (cancelled) return
+        const cover = data.title.coverPath
+        const needsCoverSync =
+          !cover ||
+          cover.startsWith('http://') ||
+          cover.startsWith('https://')
+        if (
+          needsCoverSync &&
+          data.editions.some((edition) => edition.sourceKind === 'remote')
+        ) {
+          const synced = await api.syncTitleCover(titleId)
+          if (cancelled) return
+          if (synced) {
+            data = await api.getTitleDetails(titleId)
+            if (cancelled) return
+          }
+        }
         setDetails(data)
         setEditTitle(data.title.primaryTitle)
         setEditAuthor(data.title.author ?? '')
@@ -38,9 +57,12 @@ export function TitleDetailsPage() {
           setMode(edition.readingMode)
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
       }
     })()
+    return () => {
+      cancelled = true
+    }
   }, [titleId])
 
   async function saveMetadata() {
@@ -68,7 +90,7 @@ export function TitleDetailsPage() {
   async function removeTitle() {
     if (!details) return
     const confirmed = window.confirm(
-      'Remove this title from your library? Original source files on disk will not be deleted. Only FYODOR metadata and cached extracts will be removed.',
+      'Remove this title from your library? Original source files on disk will not be deleted. Only Fyodor metadata and cached extracts will be removed.',
     )
     if (!confirmed) return
     await api.removeFromLibrary(details.title.id)
@@ -130,7 +152,6 @@ export function TitleDetailsPage() {
     return <p className="text-sm text-[var(--fy-text-muted)]">Loading title…</p>
   }
 
-  const cover = toAssetUrl(details.title.coverPath)
   const nextChapter =
     details.chapters.find((c) => c.id === details.progress?.chapterId) ?? details.chapters[0]
 
@@ -163,13 +184,11 @@ export function TitleDetailsPage() {
       <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
         <div>
           <div className="aspect-[2/3] overflow-hidden rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)]">
-            {cover ? (
-              <img src={cover} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full items-center justify-center px-3 text-center text-[var(--fy-text-muted)]">
-                No cover
-              </div>
-            )}
+            <RemoteCover
+              path={details.title.coverPath}
+              placeholder={details.title.primaryTitle}
+              className="h-full w-full object-cover"
+            />
           </div>
           <div className="mt-3 space-y-1 font-mono text-[11px] text-[var(--fy-text-muted)]">
             <div>Status: {details.entry?.status ?? '—'}</div>

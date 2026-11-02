@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="#ffb7c5"/>
+  <!-- Simple open book: two mirrored page blocks -->
+  <path fill="#d55656" d="
+    M128 150
+    c0-12 10-22 22-22
+    h86
+    c10 0 18 8 18 18
+    v230
+    c0 10-8 18-18 18
+    H150
+    c-12 0-22-10-22-22
+    V150z
+  "/>
+  <path fill="#d55656" d="
+    M258 146
+    c0-10 8-18 18-18
+    h86
+    c12 0 22 10 22 22
+    v232
+    c0 12-10 22-22 22
+    H276
+    c-10 0-18-8-18-18
+    V146z
+  "/>
+  <!-- center gutter -->
+  <rect x="246" y="140" width="20" height="240" fill="#ffb7c5"/>
+</svg>

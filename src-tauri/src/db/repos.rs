@@ -246,6 +246,15 @@ pub fn get_title(conn: &Connection, id: &str) -> AppResult<Option<Title>> {
     .map_err(AppError::from)
 }
 
+pub fn set_title_cover_path(conn: &Connection, title_id: &str, cover_path: &str) -> AppResult<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE titles SET cover_path = ?2, updated_at = ?3 WHERE id = ?1",
+        params![title_id, cover_path, now],
+    )?;
+    Ok(())
+}
+
 pub fn get_edition(conn: &Connection, id: &str) -> AppResult<Option<Edition>> {
     conn.query_row(
         "SELECT id, title_id, label, language, reading_direction, reading_mode,

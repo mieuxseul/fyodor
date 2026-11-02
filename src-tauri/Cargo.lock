@@ -1019,6 +1019,7 @@ dependencies = [
  "tauri-plugin-fs",
  "tauri-plugin-log",
  "thiserror 2.0.21",
+ "tokio",
  "uuid",
  "walkdir",
  "zip",

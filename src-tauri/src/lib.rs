@@ -1,4 +1,5 @@
 mod archive;
+mod cdn_protocol;
 mod commands;
 mod db;
 mod error;
@@ -15,6 +16,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .register_asynchronous_uri_scheme_protocol("fyodor-cdn", cdn_protocol::handle_request)
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -41,6 +43,7 @@ pub fn run() {
             library::search_library,
             library::get_remote_library_ref,
             library::add_remote_to_library,
+            library::sync_title_cover,
             import::pick_and_import_archives,
             import::pick_and_import_folder,
             import::import_path,
@@ -59,6 +62,7 @@ pub fn run() {
             atsu::atsu_search,
             atsu::atsu_health,
             atsu::atsu_title_details,
+            atsu::atsu_title_bundle,
             atsu::atsu_chapters,
             atsu::atsu_chapter_pages,
             atsu::atsu_cover_data_url,
@@ -70,5 +74,5 @@ pub fn run() {
             reader::open_edition_for_reading,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running FYODOR");
+        .expect("error while running Fyodor");
 }

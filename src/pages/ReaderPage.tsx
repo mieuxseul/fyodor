@@ -181,7 +181,7 @@ export function ReaderPage() {
   useEffect(() => {
     if (!editionId || !isTauri()) {
       setLoading(false)
-      setError('Reader requires the FYODOR desktop runtime.')
+      setError('Reader requires the Fyodor desktop runtime.')
       return
     }
 
@@ -189,27 +189,39 @@ export function ReaderPage() {
     void (async () => {
       try {
         if (remote) {
-          const [details, chapters] =
+          // Sequential MangaDex calls avoid bursting into HTTP 429 rate limits.
+          const chapters =
             remote.provider === 'atsu'
-              ? await Promise.all([
-                  api.atsuTitleDetails(remote.mangaId),
-                  api.atsuChapters(remote.mangaId),
-                ])
-              : await Promise.all([
-                  api.mangadexTitleDetails(remote.mangaId),
-                  api.mangadexChapters(remote.mangaId),
-                ])
+              ? await api.atsuChapters(remote.mangaId)
+              : await api.mangadexChapters(remote.mangaId)
           if (cancelled) return
+
+          let title = 'Untitled'
+          let providerName = remote.provider === 'atsu' ? 'Atsumaru' : 'MangaDex'
+          let contentType = 'manga'
+          try {
+            const details =
+              remote.provider === 'atsu'
+                ? await api.atsuTitleDetails(remote.mangaId)
+                : await api.mangadexTitleDetails(remote.mangaId)
+            if (cancelled) return
+            title = details.title
+            providerName = details.providerName
+            contentType = details.contentType
+          } catch {
+            // Title metadata is optional once chapters are available.
+          }
+
           const remoteSession = buildRemoteSession(
             remote.provider,
             remote.mangaId,
-            details.title,
-            details.providerName,
-            details.contentType,
+            title,
+            providerName,
+            contentType,
             chapters,
           )
           setSession(remoteSession)
-          setMode(details.contentType === 'manhwa' ? 'vertical' : 'page')
+          setMode(contentType === 'manhwa' ? 'vertical' : 'page')
           setDirection('ltr')
 
           const requested = searchParams.get('chapter')
@@ -412,9 +424,14 @@ export function ReaderPage() {
           title="Unable to open reader"
           description={error ?? 'Edition unavailable.'}
           action={
-            <Button variant="secondary" onClick={() => navigate(backTarget())}>
-              {isRemote ? 'Back to title' : 'Back to library'}
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button variant="outline" onClick={() => navigate(0)}>
+                Try again
+              </Button>
+              <Button variant="secondary" onClick={() => navigate(backTarget())}>
+                {isRemote ? 'Back to title' : 'Back to library'}
+              </Button>
+            </div>
           }
         />
       </div>
@@ -703,13 +720,13 @@ function ReaderPageImage({
   className?: string
   style?: CSSProperties
 }) {
-  const [src, setSrc] = useState<string | undefined>()
   const [failed, setFailed] = useState(false)
+  const [src, setSrc] = useState<string | undefined>(() => undefined)
 
   useEffect(() => {
     let cancelled = false
-    setSrc(undefined)
     setFailed(false)
+    setSrc(undefined)
     void resolveRemoteImageUrl(path).then((url) => {
       if (!cancelled) setSrc(url ?? toAssetUrl(path))
     })
@@ -718,7 +735,7 @@ function ReaderPageImage({
     }
   }, [path])
 
-  if (failed || !src) {
+  if (failed) {
     return (
       <div
         className={cn(
@@ -726,7 +743,20 @@ function ReaderPageImage({
           className,
         )}
       >
-        {failed ? 'Unable to load page image' : 'Loading…'}
+        Unable to load page image
+      </div>
+    )
+  }
+
+  if (!src) {
+    return (
+      <div
+        className={cn(
+          'flex min-h-[120px] items-center justify-center text-sm text-[var(--fy-text-muted)]',
+          className,
+        )}
+      >
+        Loading…
       </div>
     )
   }
@@ -738,6 +768,7 @@ function ReaderPageImage({
       className={className}
       style={style}
       loading="lazy"
+      decoding="async"
       draggable={false}
       onError={() => setFailed(true)}
     />

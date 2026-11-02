@@ -1,8 +1,8 @@
 [package]
 name = "fyodor"
 version = "0.1.0"
-description = "FYODOR — A library of worlds."
-authors = ["FYODOR"]
+description = "Fyodor — A library of worlds."
+authors = ["Fyodor"]
 edition = "2021"
 rust-version = "1.77"
 
@@ -30,6 +30,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 walkdir = "2"
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["sync", "time"] }
 open = "5"
 
 [profile.release]

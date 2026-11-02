@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { PageHeader } from '@/components/layout/PageHeader'
+import { RemoteCover } from '@/components/RemoteCover'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { api, isTauri, toAssetUrl } from '@/lib/api'
+import { api, isTauri } from '@/lib/api'
 import type { Bookmark } from '@/lib/types'
 
 function formatCreatedAt(value: string): string {
@@ -78,7 +79,6 @@ export function BookmarksPage() {
       ) : (
         <ul className="space-y-2">
           {items.map((item) => {
-            const cover = toAssetUrl(item.title.coverPath)
             const position =
               item.pageIndex != null
                 ? `Page ${item.pageIndex + 1}`
@@ -94,9 +94,11 @@ export function BookmarksPage() {
                   onClick={() => openBookmark(item)}
                 >
                   <div className="h-14 w-10 overflow-hidden rounded-md bg-[var(--fy-bg)]">
-                    {cover ? (
-                      <img src={cover} alt="" className="h-full w-full object-cover" />
-                    ) : null}
+                    <RemoteCover
+                      path={item.title.coverPath}
+                      placeholder={item.title.primaryTitle}
+                      className="h-full w-full object-cover"
+                    />
                   </div>
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium">{item.title.primaryTitle}</div>

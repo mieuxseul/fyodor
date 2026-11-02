@@ -44,7 +44,7 @@ export function createAtsuProvider(): MangaProvider {
     },
     async search(query) {
       if (!isTauri()) {
-        throw new Error('Atsumaru search requires the FYODOR desktop runtime.')
+        throw new Error('Atsumaru search requires the Fyodor desktop runtime.')
       }
       const items = await invoke<AtsuSearchItem[]>('atsu_search', {
         query,

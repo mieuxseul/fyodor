@@ -1,11 +1,16 @@
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::Mutex;
 
 use crate::error::{AppError, AppResult};
 
 const API_BASE: &str = "https://api.mangadex.org";
-const USER_AGENT: &str = "FYODOR/0.1.0 (desktop; personal manga library; +https://mangadex.org)";
 const SITE_BASE: &str = "https://mangadex.org/title";
+const MIN_REQUEST_GAP: Duration = Duration::from_millis(350);
+const MAX_RETRIES: u32 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,12 +28,68 @@ pub struct MangaDexSearchItem {
     pub website_url: String,
 }
 
-fn client() -> AppResult<reqwest::Client> {
-    reqwest::Client::builder()
-        .user_agent(USER_AGENT)
-        .timeout(std::time::Duration::from_secs(12))
-        .build()
-        .map_err(|e| AppError::Message(e.to_string()))
+fn client() -> &'static reqwest::Client {
+    crate::providers::http::client()
+}
+
+fn rate_gate() -> &'static Mutex<Instant> {
+    static GATE: OnceLock<Mutex<Instant>> = OnceLock::new();
+    GATE.get_or_init(|| Mutex::new(Instant::now() - MIN_REQUEST_GAP))
+}
+
+async fn throttle() {
+    let mut last = rate_gate().lock().await;
+    let elapsed = last.elapsed();
+    if elapsed < MIN_REQUEST_GAP {
+        tokio::time::sleep(MIN_REQUEST_GAP - elapsed).await;
+    }
+    *last = Instant::now();
+}
+
+fn retry_after_delay(response: &reqwest::Response, attempt: u32) -> Duration {
+    if let Some(value) = response.headers().get("retry-after").and_then(|v| v.to_str().ok()) {
+        if let Ok(secs) = value.parse::<u64>() {
+            return Duration::from_secs(secs.clamp(1, 20));
+        }
+    }
+    let exp = 400u64.saturating_mul(1u64 << attempt.min(4));
+    Duration::from_millis(exp.clamp(400, 8_000))
+}
+
+/// Throttled MangaDex GET with retries on HTTP 429.
+async fn api_get(url: String, query: &[(&str, String)]) -> AppResult<reqwest::Response> {
+    let client = client();
+    let mut last_status = None;
+
+    for attempt in 0..MAX_RETRIES {
+        throttle().await;
+        let mut req = client.get(&url);
+        if !query.is_empty() {
+            req = req.query(query);
+        }
+        let response = req
+            .send()
+            .await
+            .map_err(|e| AppError::Message(format!("MangaDex request failed: {e}")))?;
+
+        if response.status().as_u16() == 429 {
+            last_status = Some(response.status());
+            let delay = retry_after_delay(&response, attempt);
+            // Consume body so the connection can be reused.
+            let _ = response.bytes().await;
+            tokio::time::sleep(delay).await;
+            continue;
+        }
+
+        return Ok(response);
+    }
+
+    Err(AppError::Message(format!(
+        "MangaDex rate limited (HTTP {}) — try again in a moment",
+        last_status
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "429".into())
+    )))
 }
 
 fn pick_localized(map: &Value) -> Option<String> {
@@ -152,22 +213,20 @@ pub async fn search_manga(query: &str, limit: u32) -> AppResult<Vec<MangaDexSear
         return Ok(vec![]);
     }
 
-    let client = client()?;
-    let response = client
-        .get(format!("{API_BASE}/manga"))
-        .query(&[
-            ("title", trimmed),
-            ("limit", &limit.clamp(1, 20).to_string()),
-            ("includes[]", "cover_art"),
-            ("includes[]", "author"),
-            ("contentRating[]", "safe"),
-            ("contentRating[]", "suggestive"),
-            ("contentRating[]", "erotica"),
-            ("order[relevance]", "desc"),
-        ])
-        .send()
-        .await
-        .map_err(|e| AppError::Message(format!("MangaDex request failed: {e}")))?;
+    let response = api_get(
+        format!("{API_BASE}/manga"),
+        &[
+            ("title", trimmed.to_string()),
+            ("limit", limit.clamp(1, 20).to_string()),
+            ("includes[]", "cover_art".into()),
+            ("includes[]", "author".into()),
+            ("contentRating[]", "safe".into()),
+            ("contentRating[]", "suggestive".into()),
+            ("contentRating[]", "erotica".into()),
+            ("order[relevance]", "desc".into()),
+        ],
+    )
+    .await?;
 
     if !response.status().is_success() {
         return Err(AppError::Message(format!(
@@ -190,22 +249,16 @@ pub async fn search_manga(query: &str, limit: u32) -> AppResult<Vec<MangaDexSear
 }
 
 pub async fn health_check() -> AppResult<()> {
-    let client = client()?;
-    let response = client
-        .get(format!("{API_BASE}/ping"))
-        .send()
-        .await
-        .map_err(|e| AppError::Message(format!("MangaDex unreachable: {e}")))?;
+    let response = api_get(format!("{API_BASE}/ping"), &[]).await?;
     if response.status().is_success() {
         Ok(())
     } else {
         // Older deployments may not expose /ping; fall back to a tiny manga query.
-        let fallback = client
-            .get(format!("{API_BASE}/manga"))
-            .query(&[("limit", "1")])
-            .send()
-            .await
-            .map_err(|e| AppError::Message(format!("MangaDex unreachable: {e}")))?;
+        let fallback = api_get(
+            format!("{API_BASE}/manga"),
+            &[("limit", "1".into())],
+        )
+        .await?;
         if fallback.status().is_success() {
             Ok(())
         } else {
@@ -328,17 +381,15 @@ pub async fn title_details(manga_id: &str) -> AppResult<MangaDexTitleDetails> {
         return Err(AppError::Message("Missing MangaDex manga id".into()));
     }
 
-    let client = client()?;
-    let response = client
-        .get(format!("{API_BASE}/manga/{id}"))
-        .query(&[
-            ("includes[]", "cover_art"),
-            ("includes[]", "author"),
-            ("includes[]", "artist"),
-        ])
-        .send()
-        .await
-        .map_err(|e| AppError::Message(format!("MangaDex detail failed: {e}")))?;
+    let response = api_get(
+        format!("{API_BASE}/manga/{id}"),
+        &[
+            ("includes[]", "cover_art".into()),
+            ("includes[]", "author".into()),
+            ("includes[]", "artist".into()),
+        ],
+    )
+    .await?;
 
     if !response.status().is_success() {
         return Err(AppError::Message(format!(
@@ -366,16 +417,15 @@ pub async fn list_chapters(manga_id: &str) -> AppResult<Vec<MangaDexChapter>> {
         return Err(AppError::Message("Missing MangaDex manga id".into()));
     }
 
-    let client = client()?;
     let mut offset = 0u32;
     let mut out = Vec::new();
     let page_limit = 100u32;
 
     // Paginate feed; cap to keep UI responsive.
     for _ in 0..5 {
-        let response = client
-            .get(format!("{API_BASE}/manga/{id}/feed"))
-            .query(&[
+        let response = api_get(
+            format!("{API_BASE}/manga/{id}/feed"),
+            &[
                 ("limit", page_limit.to_string()),
                 ("offset", offset.to_string()),
                 ("translatedLanguage[]", "en".into()),
@@ -384,10 +434,9 @@ pub async fn list_chapters(manga_id: &str) -> AppResult<Vec<MangaDexChapter>> {
                 ("contentRating[]", "safe".into()),
                 ("contentRating[]", "suggestive".into()),
                 ("contentRating[]", "erotica".into()),
-            ])
-            .send()
-            .await
-            .map_err(|e| AppError::Message(format!("MangaDex chapters failed: {e}")))?;
+            ],
+        )
+        .await?;
 
         if !response.status().is_success() {
             return Err(AppError::Message(format!(
@@ -495,12 +544,11 @@ pub async fn chapter_pages(manga_id: &str, chapter_id: &str) -> AppResult<MangaD
         return Err(AppError::Message("Missing MangaDex manga/chapter id".into()));
     }
 
-    let client = client()?;
-    let response = client
-        .get(format!("{API_BASE}/at-home/server/{chapter_id}"))
-        .send()
-        .await
-        .map_err(|e| AppError::Message(format!("MangaDex at-home failed: {e}")))?;
+    let response = api_get(
+        format!("{API_BASE}/at-home/server/{chapter_id}"),
+        &[],
+    )
+    .await?;
 
     if !response.status().is_success() {
         return Err(AppError::Message(format!(
@@ -578,7 +626,7 @@ pub async fn fetch_cover_bytes(cover_url: &str) -> AppResult<Vec<u8>> {
         ));
     }
 
-    let client = client()?;
+    let client = client();
     let response = client
         .get(parsed)
         .send()

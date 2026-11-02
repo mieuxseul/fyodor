@@ -82,6 +82,9 @@ export const api = {
   addRemoteToLibrary(input: AddRemoteLibraryInput): Promise<RemoteLibraryRef> {
     return invoke('add_remote_to_library', { input })
   },
+  syncTitleCover(titleId: string): Promise<string | null> {
+    return invoke('sync_title_cover', { titleId })
+  },
   pickAndImportArchives(): Promise<ImportResult[]> {
     return invoke('pick_and_import_archives')
   },
@@ -141,6 +144,9 @@ export const api = {
   },
   atsuTitleDetails(mangaId: string): Promise<RemoteTitleDetails> {
     return invoke('atsu_title_details', { mangaId })
+  },
+  atsuTitleBundle(mangaId: string): Promise<AtsuTitleBundle> {
+    return invoke('atsu_title_bundle', { mangaId })
   },
   atsuChapters(mangaId: string): Promise<RemoteChapter[]> {
     return invoke('atsu_chapters', { mangaId })
@@ -224,6 +230,11 @@ export interface AtsuChapterPages {
   pages: string[]
 }
 
+export interface AtsuTitleBundle {
+  details: RemoteTitleDetails
+  chapters: RemoteChapter[]
+}
+
 function isAtsuCdnUrl(path: string): boolean {
   return (
     path.startsWith('https://cdn.atsu.moe/static/') ||
@@ -231,31 +242,39 @@ function isAtsuCdnUrl(path: string): boolean {
   )
 }
 
-/** Resolve covers / page images for the webview. Atsu CDN requires a Referer proxy. */
-export async function resolveCoverUrl(path?: string | null): Promise<string | undefined> {
-  if (!path) return undefined
-  if (
+function isMangaDexCoverUrl(path: string): boolean {
+  return (
     path.startsWith('https://uploads.mangadex.org/covers/') ||
     path.startsWith('http://uploads.mangadex.org/covers/')
-  ) {
-    if (!isTauri()) return undefined
-    try {
-      return await api.mangadexCoverDataUrl(path)
-    } catch {
-      return undefined
+  )
+}
+
+/**
+ * Map remote CDN URLs onto the local `fyodor-cdn` protocol.
+ * Windows WebView: http://fyodor-cdn.localhost/...
+ * Avoids base64 IPC for every cover/page image.
+ */
+export function toFyodorCdnUrl(path: string): string | undefined {
+  try {
+    const url = new URL(path)
+    if (url.hostname === 'cdn.atsu.moe' && url.pathname.startsWith('/static/')) {
+      return `http://fyodor-cdn.localhost/atsu${url.pathname}${url.search}`
     }
+    if (url.hostname === 'uploads.mangadex.org' && url.pathname.startsWith('/covers/')) {
+      return `http://fyodor-cdn.localhost/mangadex${url.pathname}${url.search}`
+    }
+  } catch {
+    return undefined
   }
-  if (isAtsuCdnUrl(path)) {
+  return undefined
+}
+
+/** Resolve covers / page images for the webview. */
+export async function resolveCoverUrl(path?: string | null): Promise<string | undefined> {
+  if (!path) return undefined
+  if (isAtsuCdnUrl(path) || isMangaDexCoverUrl(path)) {
     if (!isTauri()) return undefined
-    try {
-      return await api.atsuImageDataUrl(path)
-    } catch {
-      try {
-        return await api.atsuCoverDataUrl(path)
-      } catch {
-        return undefined
-      }
-    }
+    return toFyodorCdnUrl(path)
   }
   return toAssetUrl(path)
 }

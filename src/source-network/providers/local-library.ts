@@ -8,7 +8,7 @@ export function createLocalLibraryProvider(): MangaProvider {
       id: 'local-library',
       name: 'Local Library',
       version: '1.0.0',
-      description: 'Search titles already imported into your FYODOR library.',
+      description: 'Search titles already imported into your Fyodor library.',
       isMock: false,
       capabilities: {
         search: true,

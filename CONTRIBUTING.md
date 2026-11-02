@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for poking at FYODOR. Keep changes focused and easy to review.
+Thanks for poking at Fyodor. Keep changes focused and easy to review.
 
 ## Before you start
 

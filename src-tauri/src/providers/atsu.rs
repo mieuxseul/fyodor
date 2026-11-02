@@ -6,8 +6,6 @@ use crate::error::{AppError, AppResult};
 
 const SITE_BASE: &str = "https://atsu.moe";
 const CDN_BASE: &str = "https://cdn.atsu.moe";
-const USER_AGENT: &str = "FYODOR/0.1.0 (desktop; personal manga library; +https://atsu.moe)";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtsuSearchItem {
@@ -25,12 +23,8 @@ pub struct AtsuSearchItem {
     pub is_adult: bool,
 }
 
-fn client() -> AppResult<reqwest::Client> {
-    reqwest::Client::builder()
-        .user_agent(USER_AGENT)
-        .timeout(std::time::Duration::from_secs(12))
-        .build()
-        .map_err(|e| AppError::Message(e.to_string()))
+fn client() -> &'static reqwest::Client {
+    crate::providers::http::client()
 }
 
 fn absolute_image(path: &str) -> String {
@@ -105,7 +99,7 @@ pub async fn search_manga(query: &str, limit: u32) -> AppResult<Vec<AtsuSearchIt
     }
 
     let per_page = limit.clamp(1, 24);
-    let client = client()?;
+    let client = client();
     let response = client
         .get(format!("{SITE_BASE}/collections/manga/documents/search"))
         .query(&[
@@ -150,7 +144,7 @@ pub async fn search_manga(query: &str, limit: u32) -> AppResult<Vec<AtsuSearchIt
 }
 
 pub async fn health_check() -> AppResult<()> {
-    let client = client()?;
+    let client = client();
     let response = client
         .get(format!("{SITE_BASE}/api"))
         .header("Accept", "application/json")
@@ -224,7 +218,7 @@ pub struct AtsuChapterPages {
 }
 
 async fn fetch_json(path_and_query: &str) -> AppResult<Value> {
-    let client = client()?;
+    let client = client();
     let url = if path_and_query.starts_with("http") {
         path_and_query.to_string()
     } else {
@@ -414,19 +408,56 @@ pub async fn title_details(manga_id: &str) -> AppResult<AtsuTitleDetails> {
     parse_title_details(page).ok_or_else(|| AppError::Message("Failed to parse Atsu title".into()))
 }
 
-pub async fn list_chapters(manga_id: &str) -> AppResult<Vec<AtsuChapter>> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AtsuTitleBundle {
+    pub details: AtsuTitleDetails,
+    pub chapters: Vec<AtsuChapter>,
+}
+
+/// One round-trip for the details page: manga page + chapter list (shared mangaPage fetch).
+pub async fn title_bundle(manga_id: &str) -> AppResult<AtsuTitleBundle> {
     let id = manga_id.trim();
     if id.is_empty() {
         return Err(AppError::Message("Missing Atsu manga id".into()));
     }
 
-    let detail = fetch_json(&format!("/api/manga/page?id={id}")).await?;
-    let page = detail.get("mangaPage").cloned().unwrap_or(Value::Null);
-    let preferred = preferred_scanlation_id(&page);
-    let names = scanlator_name_map(&page);
+    // Fire both requests; join via spawned tasks on the Tauri runtime.
+    let page_url = format!("/api/manga/page?id={id}");
+    let chapters_url = format!("/api/manga/allChapters?mangaId={id}");
+    let page_task = tauri::async_runtime::spawn(async move { fetch_json(&page_url).await });
+    let chapters_task =
+        tauri::async_runtime::spawn(async move { fetch_json(&chapters_url).await });
+    let detail_payload = page_task
+        .await
+        .map_err(|e| AppError::Message(format!("Atsu detail task failed: {e}")))??;
+    let chapters_payload = chapters_task
+        .await
+        .map_err(|e| AppError::Message(format!("Atsu chapters task failed: {e}")))??;
 
-    let payload = fetch_json(&format!("/api/manga/allChapters?mangaId={id}")).await?;
-    let raw = payload
+    let page = detail_payload
+        .get("mangaPage")
+        .ok_or_else(|| AppError::Message("Atsu detail missing mangaPage".into()))?;
+    let details = parse_title_details(page)
+        .ok_or_else(|| AppError::Message("Failed to parse Atsu title".into()))?;
+    let chapters = chapters_from_payload(id, page, &chapters_payload)?;
+    Ok(AtsuTitleBundle { details, chapters })
+}
+
+pub async fn list_chapters(manga_id: &str) -> AppResult<Vec<AtsuChapter>> {
+    let bundle = title_bundle(manga_id).await?;
+    Ok(bundle.chapters)
+}
+
+fn chapters_from_payload(
+    id: &str,
+    page: &Value,
+    chapters_payload: &Value,
+) -> AppResult<Vec<AtsuChapter>> {
+    let preferred = preferred_scanlation_id(page);
+    let names = scanlator_name_map(page);
+
+    let raw = chapters_payload
         .get("chapters")
         .and_then(|v| v.as_array())
         .cloned()
@@ -521,13 +552,11 @@ pub async fn list_chapters(manga_id: &str) -> AppResult<Vec<AtsuChapter>> {
             .collect();
     }
 
-    chapters.sort_by(|a, b| {
-        match (a.number, b.number) {
-            (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.sort_index.cmp(&b.sort_index),
-        }
+    chapters.sort_by(|a, b| match (a.number, b.number) {
+        (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.sort_index.cmp(&b.sort_index),
     });
 
     Ok(chapters)
@@ -590,7 +619,7 @@ pub async fn fetch_cdn_bytes(cdn_url: &str) -> AppResult<Vec<u8>> {
         ));
     }
 
-    let client = client()?;
+    let client = client();
     let response = client
         .get(parsed)
         .header("Referer", SITE_BASE)

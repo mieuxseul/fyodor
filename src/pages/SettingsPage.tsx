@@ -44,7 +44,7 @@ export function SettingsPage() {
     if (!isTauri()) return
     try {
       const destination = await save({
-        title: 'Backup FYODOR database',
+        title: 'Backup Fyodor database',
         defaultPath: 'fyodor-backup.db',
         filters: [{ name: 'SQLite', extensions: ['db'] }],
       })

@@ -91,7 +91,7 @@ export function SourcesPage() {
     <div>
       <PageHeader
         title="Sources"
-        subtitle="FYODOR Source Network — provider registry, capabilities, and health. Official providers credit their hosts; downloads and in-app online reading stay disabled until explicitly authorized."
+        subtitle="Fyodor Source Network — provider registry, capabilities, and health. Official providers credit their hosts; downloads and in-app online reading stay disabled until explicitly authorized."
         actions={
           <Button
             variant="secondary"

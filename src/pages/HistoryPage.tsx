@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { PageHeader } from '@/components/layout/PageHeader'
+import { RemoteCover } from '@/components/RemoteCover'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { api, isTauri, toAssetUrl } from '@/lib/api'
+import { api, isTauri } from '@/lib/api'
 import type { HistoryItem } from '@/lib/types'
 
 function formatOpenedAt(value: string): string {
@@ -85,7 +86,6 @@ export function HistoryPage() {
       ) : (
         <ul className="space-y-2">
           {items.map((item) => {
-            const cover = toAssetUrl(item.title.coverPath)
             return (
               <li
                 key={item.id}
@@ -97,9 +97,11 @@ export function HistoryPage() {
                   onClick={() => navigate(`/title/${item.title.id}`)}
                 >
                   <div className="h-16 w-12 overflow-hidden rounded-md bg-[var(--fy-bg)]">
-                    {cover ? (
-                      <img src={cover} alt="" className="h-full w-full object-cover" />
-                    ) : null}
+                    <RemoteCover
+                      path={item.title.coverPath}
+                      placeholder={item.title.primaryTitle}
+                      className="h-full w-full object-cover"
+                    />
                   </div>
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium">{item.title.primaryTitle}</div>

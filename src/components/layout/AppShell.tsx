@@ -1,6 +1,12 @@
 import { Outlet, useLocation } from 'react-router-dom'
 
-import { Sidebar } from '@/components/layout/Sidebar'
+import { AppSidebar } from '@/components/layout/Sidebar'
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from '@/components/ui/Sidebar'
+import { Separator } from '@/components/ui/Separator'
 
 export function AppShell() {
   const location = useLocation()
@@ -11,7 +17,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="relative flex h-full overflow-hidden text-[var(--fy-text)]">
+    <SidebarProvider className="relative h-full min-h-0 overflow-hidden text-[var(--fy-text)]">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
@@ -26,15 +32,22 @@ export function AppShell() {
         className="pointer-events-none absolute -right-16 bottom-0 h-72 w-72 rounded-full bg-[var(--fy-accent-soft)] opacity-50 blur-3xl"
       />
 
-      <Sidebar />
+      <AppSidebar />
 
-      <div className="relative flex min-w-0 flex-1 flex-col">
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+      <SidebarInset className="relative z-10 min-w-0 bg-transparent">
+        <header className="flex h-12 shrink-0 items-center gap-2 px-3 sm:px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-1 h-4" />
+          <span className="truncate text-sm text-[var(--fy-text-muted)]">
+            Fyodor
+          </span>
+        </header>
+        <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 sm:px-6">
           <div className="fy-fade-in fy-glass-soft w-full rounded-2xl p-5 sm:p-6">
             <Outlet />
           </div>
         </main>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

@@ -46,7 +46,7 @@ export function createMangaDexProvider(): MangaProvider {
     },
     async search(query) {
       if (!isTauri()) {
-        throw new Error('MangaDex search requires the FYODOR desktop runtime.')
+        throw new Error('MangaDex search requires the Fyodor desktop runtime.')
       }
       const items = await invoke<MangaDexSearchItem[]>('mangadex_search', {
         query,

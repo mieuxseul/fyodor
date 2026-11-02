@@ -7,7 +7,6 @@ import { DownloadsPage } from '@/pages/DownloadsPage'
 import { HistoryPage } from '@/pages/HistoryPage'
 import { LibraryPage } from '@/pages/LibraryPage'
 import { ReaderPage } from '@/pages/ReaderPage'
-import { ReadingPage } from '@/pages/ReadingPage'
 import { RemoteTitlePage } from '@/pages/RemoteTitlePage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { SourcesPage } from '@/pages/SourcesPage'
@@ -20,7 +19,7 @@ export function AppRouter() {
         <Route index element={<Navigate to="/library" replace />} />
         <Route path="discover" element={<DiscoverPage />} />
         <Route path="library" element={<LibraryPage />} />
-        <Route path="reading" element={<ReadingPage />} />
+        <Route path="reading" element={<Navigate to="/library" replace />} />
         <Route path="title/:titleId" element={<TitleDetailsPage />} />
         <Route path="remote/:providerId/:titleId" element={<RemoteTitlePage />} />
         <Route path="downloads" element={<DownloadsPage />} />

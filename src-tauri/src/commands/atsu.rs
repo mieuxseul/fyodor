@@ -2,7 +2,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 use crate::error::AppResult;
 use crate::providers::atsu::{
-    self, AtsuChapter, AtsuChapterPages, AtsuSearchItem, AtsuTitleDetails,
+    self, AtsuChapter, AtsuChapterPages, AtsuSearchItem, AtsuTitleBundle, AtsuTitleDetails,
 };
 
 #[tauri::command]
@@ -18,6 +18,11 @@ pub async fn atsu_health() -> AppResult<()> {
 #[tauri::command]
 pub async fn atsu_title_details(manga_id: String) -> AppResult<AtsuTitleDetails> {
     atsu::title_details(&manga_id).await
+}
+
+#[tauri::command]
+pub async fn atsu_title_bundle(manga_id: String) -> AppResult<AtsuTitleBundle> {
+    atsu::title_bundle(&manga_id).await
 }
 
 #[tauri::command]

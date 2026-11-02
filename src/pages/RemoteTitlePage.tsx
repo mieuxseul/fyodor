@@ -1,7 +1,7 @@
+import { ChevronLeft } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import { PageHeader } from '@/components/layout/PageHeader'
 import { RemoteCover } from '@/components/RemoteCover'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -14,7 +14,16 @@ import {
 } from '@/lib/api'
 
 const PAGE_SIZE = 40
+const SYNOPSIS_PREVIEW = 280
 const SUPPORTED = new Set(['atsu', 'mangadex'])
+
+function cleanSynopsis(raw: string | null | undefined): string {
+  return (raw ?? '')
+    .replace(/\*/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
 
 export function RemoteTitlePage() {
   const { providerId = '', titleId = '' } = useParams()
@@ -27,8 +36,9 @@ export function RemoteTitlePage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [chapterQuery, setChapterQuery] = useState('')
-  const [chapterSort, setChapterSort] = useState<'asc' | 'desc'>('asc')
+  const [chapterSort, setChapterSort] = useState<'asc' | 'desc'>('desc')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const [synopsisOpen, setSynopsisOpen] = useState(false)
 
   useEffect(() => {
     if (!SUPPORTED.has(providerId) || !titleId || !isTauri()) {
@@ -36,7 +46,7 @@ export function RemoteTitlePage() {
       setError(
         !SUPPORTED.has(providerId)
           ? 'This provider has no in-app details page yet.'
-          : 'Remote titles require the FYODOR desktop runtime.',
+          : 'Remote titles require the Fyodor desktop runtime.',
       )
       return
     }
@@ -46,20 +56,30 @@ export function RemoteTitlePage() {
       setLoading(true)
       setError(null)
       try {
-        const [detail, chapterList, remoteRef] = await Promise.all([
-          providerId === 'atsu'
-            ? api.atsuTitleDetails(titleId)
-            : api.mangadexTitleDetails(titleId),
-          providerId === 'atsu'
-            ? api.atsuChapters(titleId)
-            : api.mangadexChapters(titleId),
-          api.getRemoteLibraryRef(providerId, titleId),
-        ])
+        const remoteRefPromise = api.getRemoteLibraryRef(providerId, titleId)
+        if (providerId === 'atsu') {
+          const [bundle, remoteRef] = await Promise.all([
+            api.atsuTitleBundle(titleId),
+            remoteRefPromise,
+          ])
+          if (cancelled) return
+          setDetails(bundle.details)
+          setChapters(bundle.chapters)
+          setLibraryRef(remoteRef)
+        } else {
+          const [detail, chapterList, remoteRef] = await Promise.all([
+            api.mangadexTitleDetails(titleId),
+            api.mangadexChapters(titleId),
+            remoteRefPromise,
+          ])
+          if (cancelled) return
+          setDetails(detail)
+          setChapters(chapterList)
+          setLibraryRef(remoteRef)
+        }
         if (cancelled) return
-        setDetails(detail)
-        setChapters(chapterList)
-        setLibraryRef(remoteRef)
         setVisibleCount(PAGE_SIZE)
+        setSynopsisOpen(false)
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
       } finally {
@@ -93,10 +113,20 @@ export function RemoteTitlePage() {
   }, [chapters, chapterQuery, chapterSort])
 
   const visibleChapters = filteredChapters.slice(0, visibleCount)
-  const latestChapter =
+  const firstChapter =
     filteredChapters.length > 0
-      ? [...filteredChapters].sort((a, b) => (b.number ?? 0) - (a.number ?? 0))[0]
+      ? [...filteredChapters].sort((a, b) => (a.number ?? 0) - (b.number ?? 0))[0]
       : null
+
+  const synopsisText = useMemo(
+    () => cleanSynopsis(details?.description),
+    [details?.description],
+  )
+  const synopsisNeedsToggle = synopsisText.length > SYNOPSIS_PREVIEW
+  const synopsisShown =
+    !synopsisNeedsToggle || synopsisOpen
+      ? synopsisText
+      : `${synopsisText.slice(0, SYNOPSIS_PREVIEW).replace(/\s+\S*$/, '')}…`
 
   function openChapter(chapter: RemoteChapter) {
     navigate(`/reader/${providerId}:${titleId}?chapter=${encodeURIComponent(chapter.id)}`)
@@ -149,14 +179,14 @@ export function RemoteTitlePage() {
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="h-8 w-64 animate-pulse rounded bg-[var(--fy-bg)]" />
-        <div className="flex gap-4">
-          <div className="h-56 w-40 animate-pulse rounded-lg bg-[var(--fy-bg)]" />
-          <div className="flex-1 space-y-2">
-            <div className="h-4 w-3/4 animate-pulse rounded bg-[var(--fy-bg)]" />
-            <div className="h-4 w-full animate-pulse rounded bg-[var(--fy-bg)]" />
-            <div className="h-4 w-5/6 animate-pulse rounded bg-[var(--fy-bg)]" />
+      <div className="space-y-6">
+        <div className="h-4 w-24 animate-pulse rounded bg-[var(--fy-bg)]" />
+        <div className="flex gap-6">
+          <div className="h-64 w-44 animate-pulse rounded-lg bg-[var(--fy-bg)]" />
+          <div className="flex-1 space-y-3 pt-2">
+            <div className="h-8 w-2/3 animate-pulse rounded bg-[var(--fy-bg)]" />
+            <div className="h-4 w-1/3 animate-pulse rounded bg-[var(--fy-bg)]" />
+            <div className="h-10 w-40 animate-pulse rounded bg-[var(--fy-bg)]" />
           </div>
         </div>
       </div>
@@ -191,32 +221,32 @@ export function RemoteTitlePage() {
     )
   }
 
-  const startChapter =
-    (chapterSort === 'asc' ? filteredChapters[0] : latestChapter) ?? chapters[0] ?? null
+  const startChapter = firstChapter ?? chapters[0] ?? null
+  const metaBits = [
+    details.providerName,
+    details.contentType,
+    details.publicationStatus?.replace(/_/g, ' '),
+    details.author,
+    details.releaseYear != null ? String(details.releaseYear) : null,
+    details.rating != null ? `★ ${details.rating.toFixed(1)}` : null,
+    chapters.length > 0 ? `${chapters.length} ch` : null,
+  ].filter(Boolean)
 
   return (
-    <div>
-      <PageHeader
-        title={details.title}
-        subtitle={`${details.providerName} · ${details.contentType}${
-          details.publicationStatus ? ` · ${details.publicationStatus}` : ''
-        }`}
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => navigate('/discover')}>
-              Back to Discover
-            </Button>
-            <Button variant="ghost" onClick={() => void api.openExternalUrl(details.websiteUrl)}>
-              Open source
-            </Button>
-          </div>
-        }
-      />
+    <div className="pb-8">
+      <button
+        type="button"
+        onClick={() => navigate('/discover')}
+        className="mb-5 inline-flex items-center gap-1 text-sm text-[var(--fy-text-muted)] transition hover:text-[var(--fy-text)]"
+      >
+        <ChevronLeft size={16} />
+        Discover
+      </button>
 
       {error ? <p className="mb-3 text-sm text-[var(--fy-danger)]">{error}</p> : null}
       {notice ? <p className="mb-3 text-sm text-[var(--fy-text-muted)]">{notice}</p> : null}
 
-      <section className="mb-8 flex w-full flex-col gap-5 sm:flex-row sm:items-start">
+      <section className="mb-10 flex w-full flex-col gap-6 sm:flex-row sm:items-start">
         <div className="h-64 w-44 shrink-0 overflow-hidden rounded-lg border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] sm:h-72 sm:w-48">
           <RemoteCover
             path={details.coverUrl}
@@ -225,104 +255,26 @@ export function RemoteTitlePage() {
           />
         </div>
 
-        <div className="min-w-0 w-full flex-1 space-y-3">
-          {details.alternateTitles.length > 0 ? (
-            <p className="text-sm text-[var(--fy-text-muted)]">
-              Also known as: {details.alternateTitles.slice(0, 4).join(' · ')}
+        <div className="min-w-0 w-full flex-1">
+          <h1 className="text-3xl font-semibold tracking-tight text-[var(--fy-text)]">
+            {details.title}
+          </h1>
+
+          {details.alternateTitles[0] ? (
+            <p className="mt-1 text-sm text-[var(--fy-text-muted)]">{details.alternateTitles[0]}</p>
+          ) : null}
+
+          <p className="mt-3 text-sm capitalize text-[var(--fy-text-muted)]">
+            {metaBits.join(' · ')}
+          </p>
+
+          {details.genres.length > 0 ? (
+            <p className="mt-3 text-sm text-[var(--fy-text-muted)]">
+              {details.genres.slice(0, 8).join(' · ')}
             </p>
           ) : null}
 
-          <dl className="grid w-full grid-cols-1 gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-            {details.author ? (
-              <div>
-                <dt className="font-mono text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
-                  Author
-                </dt>
-                <dd>{details.author}</dd>
-              </div>
-            ) : null}
-            {details.artist ? (
-              <div>
-                <dt className="font-mono text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
-                  Artist
-                </dt>
-                <dd>{details.artist}</dd>
-              </div>
-            ) : null}
-            <div>
-              <dt className="font-mono text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
-                Type
-              </dt>
-              <dd className="capitalize">{details.contentType}</dd>
-            </div>
-            {details.publicationStatus ? (
-              <div>
-                <dt className="font-mono text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
-                  Status
-                </dt>
-                <dd className="capitalize">{details.publicationStatus.replace(/_/g, ' ')}</dd>
-              </div>
-            ) : null}
-            {details.releaseYear != null ? (
-              <div>
-                <dt className="font-mono text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
-                  Release year
-                </dt>
-                <dd>{details.releaseYear}</dd>
-              </div>
-            ) : null}
-            {details.rating != null ? (
-              <div>
-                <dt className="font-mono text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
-                  Rating
-                </dt>
-                <dd>{details.rating.toFixed(2)}</dd>
-              </div>
-            ) : null}
-            <div>
-              <dt className="font-mono text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
-                Source
-              </dt>
-              <dd>{details.providerName}</dd>
-            </div>
-            <div>
-              <dt className="font-mono text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
-                Chapters
-              </dt>
-              <dd>
-                {chapters.length}
-                {details.latestChapterTitle ? ` · Latest: ${details.latestChapterTitle}` : ''}
-              </dd>
-            </div>
-          </dl>
-
-          {details.genres.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {details.genres.map((genre) => (
-                <span
-                  key={genre}
-                  className="rounded-md border border-[var(--fy-border-subtle)] px-2 py-0.5 text-xs"
-                >
-                  {genre}
-                </span>
-              ))}
-            </div>
-          ) : null}
-
-          {(details.tags ?? []).length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {details.tags.slice(0, 16).map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-md border border-dashed border-[var(--fy-border-subtle)] px-2 py-0.5 text-[11px] text-[var(--fy-text-muted)]"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap gap-2 pt-1">
+          <div className="mt-6 flex flex-wrap items-center gap-3">
             <Button
               variant="primary"
               disabled={!startChapter}
@@ -330,50 +282,61 @@ export function RemoteTitlePage() {
             >
               Start reading
             </Button>
-            {latestChapter ? (
-              <Button variant="secondary" onClick={() => openChapter(latestChapter)}>
-                Latest chapter
-              </Button>
-            ) : null}
-            <Button variant="secondary" disabled={busy} onClick={() => void toggleLibrary()}>
-              {libraryRef?.inLibrary ? 'Remove from library' : 'Add to library'}
-            </Button>
-            <Button variant="ghost" disabled title="Downloads are not enabled for remote sources yet">
-              Download
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => void toggleLibrary()}
+            >
+              {libraryRef?.inLibrary ? 'In library — remove' : 'Add to library'}
             </Button>
           </div>
-
         </div>
       </section>
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-base font-semibold tracking-tight">Synopsis</h2>
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--fy-text-muted)]">
-          {details.description?.trim() || 'No description available from this source.'}
+      <section className="mb-10 max-w-3xl">
+        <h2 className="mb-2 text-sm font-medium tracking-wide text-[var(--fy-text-muted)]">
+          Synopsis
+        </h2>
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--fy-text)]">
+          {synopsisText ? synopsisShown : 'No description from this source.'}
         </p>
+        {synopsisNeedsToggle ? (
+          <button
+            type="button"
+            className="mt-2 text-sm text-[var(--fy-text-muted)] underline-offset-4 hover:text-[var(--fy-text)] hover:underline"
+            onClick={() => setSynopsisOpen((open) => !open)}
+          >
+            {synopsisOpen ? 'Show less' : 'Show more'}
+          </button>
+        ) : null}
       </section>
 
       <section>
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-          <h2 className="text-base font-semibold tracking-tight">Chapters</h2>
-          <div className="flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--fy-border-subtle)] pb-3">
+          <h2 className="text-sm font-medium tracking-wide text-[var(--fy-text-muted)]">
+            Chapters
+            <span className="ml-2 font-normal text-[var(--fy-text-muted)]">
+              {filteredChapters.length}
+            </span>
+          </h2>
+          <div className="flex items-center gap-2">
             <input
               value={chapterQuery}
               onChange={(e) => {
                 setChapterQuery(e.target.value)
                 setVisibleCount(PAGE_SIZE)
               }}
-              placeholder="Search chapters…"
-              className="min-w-[180px] rounded-lg border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--fy-border)]"
+              placeholder="Filter…"
+              className="w-36 rounded-md border border-[var(--fy-border-subtle)] bg-transparent px-2.5 py-1.5 text-sm outline-none focus:border-[var(--fy-border)]"
             />
             <select
               value={chapterSort}
               onChange={(e) => setChapterSort(e.target.value as 'asc' | 'desc')}
-              className="rounded-lg border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] px-2.5 py-1.5 text-sm"
+              className="rounded-md border border-[var(--fy-border-subtle)] bg-transparent px-2 py-1.5 text-sm"
               aria-label="Chapter sort order"
             >
-              <option value="asc">Oldest first</option>
-              <option value="desc">Newest first</option>
+              <option value="desc">Newest</option>
+              <option value="asc">Oldest</option>
             </select>
           </div>
         </div>
@@ -383,43 +346,38 @@ export function RemoteTitlePage() {
             title="No chapters"
             description={
               chapterQuery
-                ? 'No chapters match your search.'
+                ? 'No chapters match your filter.'
                 : 'No readable chapters were returned for this title.'
             }
           />
         ) : (
           <>
-            <ul className="divide-y divide-[var(--fy-border-subtle)] rounded-xl border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)]">
+            <ul className="divide-y divide-[var(--fy-border-subtle)]">
               {visibleChapters.map((chapter) => (
                 <li key={chapter.id}>
                   <button
                     type="button"
-                    className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-[var(--fy-nav-active)]"
+                    className="flex w-full items-baseline justify-between gap-4 py-3 text-left transition hover:text-[var(--fy-text)]"
                     onClick={() => openChapter(chapter)}
                   >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{chapter.title}</div>
-                      <div className="font-mono text-[11px] text-[var(--fy-text-muted)]">
-                        {chapter.scanlator ? `${chapter.scanlator} · ` : ''}
-                        {chapter.pageCount} page{chapter.pageCount === 1 ? '' : 's'}
-                        {chapter.createdAt
-                          ? ` · ${new Date(chapter.createdAt).toLocaleDateString()}`
-                          : ''}
-                      </div>
-                    </div>
-                    <span className="shrink-0 text-xs text-[var(--fy-text-muted)]">Read</span>
+                    <span className="min-w-0 truncate text-sm">{chapter.title}</span>
+                    <span className="shrink-0 font-mono text-[11px] text-[var(--fy-text-muted)]">
+                      {chapter.scanlator ? `${chapter.scanlator} · ` : ''}
+                      {chapter.pageCount}p
+                    </span>
                   </button>
                 </li>
               ))}
             </ul>
             {visibleCount < filteredChapters.length ? (
-              <div className="mt-3 flex justify-center">
-                <Button
-                  variant="secondary"
+              <div className="mt-4">
+                <button
+                  type="button"
+                  className="text-sm text-[var(--fy-text-muted)] underline-offset-4 hover:text-[var(--fy-text)] hover:underline"
                   onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
                 >
-                  Show more ({filteredChapters.length - visibleCount} remaining)
-                </Button>
+                  Show more ({filteredChapters.length - visibleCount})
+                </button>
               </div>
             ) : null}
           </>

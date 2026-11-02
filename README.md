@@ -1,4 +1,4 @@
-# FYODOR
+# Fyodor
 
 Desktop manga / manhwa reader. Local library first, online sources optional.
 
