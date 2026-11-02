@@ -1,67 +1,31 @@
 # Fyodor
 
-Desktop manga / manhwa reader. Local library first, online sources optional.
+A desktop manga and manhwa reader. Local library first; online sources when you want them.
 
-Built with Tauri 2, React, TypeScript, and SQLite.
+## Features
 
-## What it does
+- Import CBZ, ZIP, and image folders into a local library
+- Browse titles with reading progress, history, and bookmarks
+- Paged and vertical-scroll reading modes
+- Discover and read from enabled online sources
+- Built-in support for MangaDex and Atsumaru
 
-- Import CBZ / ZIP / image folders into a local library
-- Browse titles, track reading progress, history, bookmarks
-- Dual reading modes (paged + vertical scroll)
-- Discover search across enabled sources (Source Network)
-- In-app details + reading for MangaDex and Atsumaru (atsu.moe)
+Remote downloads are off for now.
 
-Remote downloads are intentionally off for now.
+## Install
 
-## Requirements
-
-- Node.js 20+
-- Rust (stable)
-- Windows: MSVC Build Tools (“Desktop development with C++”)
-- WebView2 (comes with modern Windows)
-
-## Setup
-
-```bash
-npm install
-npm run tauri:dev
-```
-
-Frontend only (no Rust commands / DB):
-
-```bash
-npm run dev
-```
-
-## Scripts
-
-| Command | What it does |
-| --- | --- |
-| `npm test` | Vitest |
-| `npm run build` | Frontend production build |
-| `npm run tauri:build` | Release app binary / installer |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | Rust tests |
-
-Sample CBZ for import testing:
-
-```bash
-node scripts/generate-fixture.mjs
-```
-
-Import `fixtures/sample-chapter.cbz` from **Library → Import CBZ**.
+Grab the latest Windows build from [Releases](https://github.com/rickshank-rickdemption/fyodor/releases).
 
 ## Sources
 
-- **MangaDex** — official API (`api.mangadex.org`). Search, metadata, chapters, at-home pages. Credit MangaDex. Follow their API rules.
-- **Atsumaru** — unofficial site JSON (same endpoints the website uses). Search, chapters, in-app reading. Not affiliated with Atsumaru; endpoints can change.
-- Covers / page images for Atsumaru are fetched through the app (CDN blocks bare requests).
+- **MangaDex** — search, metadata, chapters, and in-app reading via the official API
+- **Atsumaru** — search, chapters, and in-app reading (unofficial; not affiliated)
 
-Provider health lives under **Sources**. If a host is unreachable from your network, disable it there.
+Manage source availability under **Sources** in the app.
 
 ## Data
 
-App paths and privacy notes: **Settings → Data & privacy**.
+Library paths and privacy notes live under **Settings → Data & privacy**.
 
 Removing a title from the library does not delete the original files you imported.
 
