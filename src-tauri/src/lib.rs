@@ -8,7 +8,7 @@ mod state;
 
 use tauri::Manager;
 
-use commands::{atsu, import, library, mangadex, organization, reader, settings, system};
+use commands::{atsu, import, kotatsu, library, mangadex, organization, reader, settings, system};
 use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -16,6 +16,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .register_asynchronous_uri_scheme_protocol("fyodor-cdn", cdn_protocol::handle_request)
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -67,6 +69,15 @@ pub fn run() {
             atsu::atsu_chapter_pages,
             atsu::atsu_cover_data_url,
             atsu::atsu_image_data_url,
+            kotatsu::kotatsu_health,
+            kotatsu::kotatsu_list_sources,
+            kotatsu::kotatsu_get_enabled_sources,
+            kotatsu::kotatsu_set_enabled_sources,
+            kotatsu::kotatsu_search,
+            kotatsu::kotatsu_search_enabled,
+            kotatsu::kotatsu_title_details,
+            kotatsu::kotatsu_chapters,
+            kotatsu::kotatsu_chapter_pages,
             system::open_external_url,
             reader::get_chapter_pages,
             reader::get_reading_progress,

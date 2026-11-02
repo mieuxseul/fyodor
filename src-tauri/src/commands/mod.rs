@@ -1,5 +1,6 @@
 pub mod atsu;
 pub mod import;
+pub mod kotatsu;
 pub mod library;
 pub mod mangadex;
 pub mod organization;

@@ -157,6 +157,65 @@ export const api = {
   openExternalUrl(url: string): Promise<void> {
     return invoke('open_external_url', { url })
   },
+  kotatsuHealth(): Promise<{ ok: boolean; sources?: number }> {
+    return invoke('kotatsu_health')
+  },
+  kotatsuListSources(): Promise<{
+    ok: boolean
+    sources: Array<{
+      id: string
+      title: string
+      locale: string
+      contentType: string
+      broken: boolean
+      domain?: string | null
+    }>
+  }> {
+    return invoke('kotatsu_list_sources')
+  },
+  kotatsuGetEnabledSources(): Promise<string[]> {
+    return invoke('kotatsu_get_enabled_sources')
+  },
+  kotatsuSetEnabledSources(sources: string[]): Promise<void> {
+    return invoke('kotatsu_set_enabled_sources', { sources })
+  },
+  kotatsuTitleDetails(input: {
+    source: string
+    url: string
+    title: string
+    id?: string
+    coverUrl?: string
+  }): Promise<{ ok: boolean; details: Record<string, unknown> }> {
+    return invoke('kotatsu_title_details', input)
+  },
+  kotatsuChapters(input: {
+    source: string
+    url: string
+    title: string
+    id?: string
+    coverUrl?: string
+  }): Promise<{
+    ok: boolean
+    chapters: Array<{
+      id: string
+      url: string
+      title: string
+      number?: number | null
+      scanlator?: string | null
+      sortIndex: number
+    }>
+  }> {
+    return invoke('kotatsu_chapters', input)
+  },
+  kotatsuChapterPages(input: {
+    source: string
+    mangaUrl: string
+    chapterUrl: string
+    chapterId: string
+    title?: string
+  }): Promise<{ ok: boolean; pages: string[] }> {
+    return invoke('kotatsu_chapter_pages', input)
+  },
 }
 
 /** Shared shape for in-app remote title details (Atsumaru / MangaDex). */

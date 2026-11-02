@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Fyodor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.fyodor.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https://asset.localhost http://fyodor-cdn.localhost https://fyodor-cdn.localhost data: blob: https://cdn.atsu.moe https://uploads.mangadex.org https://*.mangadex.network; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://fyodor-cdn.localhost https://fyodor-cdn.localhost",
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https://asset.localhost http://fyodor-cdn.localhost https://fyodor-cdn.localhost data: blob: https://cdn.atsu.moe https://uploads.mangadex.org https://*.mangadex.network; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://fyodor-cdn.localhost https://fyodor-cdn.localhost https://github.com https://api.github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com; worker-src 'self'",
       "assetProtocol": {
         "enable": true,
         "scope": ["**"]
@@ -32,13 +32,30 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": [
+      "resources/kotatsu-bridge.jar"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZBRjIxRDM3QjRDOTAxN0UKUldSK0FjbTBOeDN5YXRCcENJVGtLYzdvMmhWR3ZINEJkQitvSDlLelUwU09UazhKM0Y0TzFOOHcK",
+      "endpoints": [
+        "https://github.com/rickshank-rickdemption/fyodor/releases/latest/download/latest.json"
+      ]
+    }
+  }
 }

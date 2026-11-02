@@ -1,3 +1,4 @@
+import { Check } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { RemoteCover } from '@/components/RemoteCover'
@@ -7,6 +8,9 @@ import type { LibraryItem } from '@/lib/types'
 interface CoverCardProps {
   item: LibraryItem
   view?: 'grid' | 'list'
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelect?: (titleId: string) => void
 }
 
 function progressPercent(item: LibraryItem): number {
@@ -23,21 +27,48 @@ function titleHref(item: LibraryItem): string {
     edition.providerTitleId &&
     edition.sourceKind === 'remote'
   ) {
-    return `/remote/${edition.providerId}/${edition.providerTitleId}`
+    return `/remote/${edition.providerId}/${encodeURIComponent(edition.providerTitleId)}`
   }
   return `/title/${item.title.id}`
 }
 
-export function CoverCard({ item, view = 'grid' }: CoverCardProps) {
+export function CoverCard({
+  item,
+  view = 'grid',
+  selectable = false,
+  selected = false,
+  onToggleSelect,
+}: CoverCardProps) {
   const percent = progressPercent(item)
   const href = titleHref(item)
 
-  if (view === 'list') {
+  function selectControl(className?: string) {
+    if (!selectable) return null
     return (
-      <Link
-        to={href}
-        className="flex items-center gap-4 rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] px-3 py-2 transition-colors hover:border-[var(--fy-accent)]"
+      <button
+        type="button"
+        aria-label={selected ? 'Deselect title' : 'Select title'}
+        aria-pressed={selected}
+        className={cn(
+          'inline-flex h-6 w-6 items-center justify-center rounded-md border border-[var(--fy-border)] bg-[var(--fy-panel-solid)]/90 text-[var(--fy-text)] shadow-sm',
+          selected && 'border-[var(--fy-accent)] bg-[var(--fy-accent)] text-[var(--fy-panel-solid)]',
+          className,
+        )}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onToggleSelect?.(item.title.id)
+        }}
       >
+        {selected ? <Check size={14} /> : null}
+      </button>
+    )
+  }
+
+  if (view === 'list') {
+    const body = (
+      <>
+        {selectControl('mr-1 shrink-0')}
         <div className="h-16 w-12 overflow-hidden rounded-sm bg-[var(--fy-bg)]">
           <RemoteCover
             path={item.title.coverPath}
@@ -52,24 +83,47 @@ export function CoverCard({ item, view = 'grid' }: CoverCardProps) {
             <span>
               {item.currentChapterTitle ?? 'Unread'} · {item.chapterCount} ch
             </span>
-            {item.entry.isLocal ? <span>Local</span> : null}
+            <span>{item.title.contentType || 'manga'}</span>
+            {item.entry.isLocal ? <span>Local</span> : <span>Remote</span>}
           </div>
         </div>
+      </>
+    )
+
+    if (selectable) {
+      return (
+        <div
+          className={cn(
+            'flex items-center gap-4 rounded-sm border bg-[var(--fy-panel)] px-3 py-2 transition-colors',
+            selected
+              ? 'border-[var(--fy-accent)]'
+              : 'border-[var(--fy-border-subtle)] hover:border-[var(--fy-accent)]',
+          )}
+        >
+          {body}
+        </div>
+      )
+    }
+
+    return (
+      <Link
+        to={href}
+        className="flex items-center gap-4 rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] px-3 py-2 transition-colors hover:border-[var(--fy-accent)]"
+      >
+        {body}
       </Link>
     )
   }
 
-  return (
-    <Link
-      to={href}
-      className="group block overflow-hidden rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] transition-colors hover:border-[var(--fy-accent)]"
-    >
+  const card = (
+    <>
       <div className="relative aspect-[2/3] overflow-hidden bg-[var(--fy-bg)]">
         <RemoteCover
           path={item.title.coverPath}
           placeholder={item.title.primaryTitle}
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
         />
+        {selectControl('absolute left-2 top-2 z-10')}
         <div className="absolute inset-x-0 bottom-0 h-0.5 bg-[var(--fy-border-subtle)]">
           <div
             className="h-full bg-[var(--fy-progress)] transition-[width]"
@@ -88,6 +142,30 @@ export function CoverCard({ item, view = 'grid' }: CoverCardProps) {
           </span>
         </div>
       </div>
+    </>
+  )
+
+  if (selectable) {
+    return (
+      <div
+        className={cn(
+          'group block overflow-hidden rounded-sm border bg-[var(--fy-panel)] transition-colors',
+          selected
+            ? 'border-[var(--fy-accent)]'
+            : 'border-[var(--fy-border-subtle)] hover:border-[var(--fy-accent)]',
+        )}
+      >
+        {card}
+      </div>
+    )
+  }
+
+  return (
+    <Link
+      to={href}
+      className="group block overflow-hidden rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] transition-colors hover:border-[var(--fy-accent)]"
+    >
+      {card}
     </Link>
   )
 }

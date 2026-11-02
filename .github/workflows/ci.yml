@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (lint · test · build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production frontend build
+        run: npm run build
+
+  rust:
+    name: Rust (check · test)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install frontend deps (Tauri build script)
+        run: npm ci
+
+      - name: Placeholder Kotatsu bridge jar
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path src-tauri/resources | Out-Null
+          if (-not (Test-Path src-tauri/resources/kotatsu-bridge.jar)) {
+            Set-Content -Path src-tauri/resources/kotatsu-bridge.jar -Value "ci-placeholder"
+          }
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Cargo check
+        working-directory: src-tauri
+        run: cargo check
+
+      - name: Cargo test
+        working-directory: src-tauri
+        run: cargo test
+
+  smoke-windows:
+    name: Windows smoke (tauri build --no-bundle)
+    runs-on: windows-latest
+    needs: [frontend, rust]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Placeholder Kotatsu bridge jar
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path src-tauri/resources | Out-Null
+          if (-not (Test-Path src-tauri/resources/kotatsu-bridge.jar)) {
+            Set-Content -Path src-tauri/resources/kotatsu-bridge.jar -Value "ci-placeholder"
+          }
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install WebView2 (if needed)
+        shell: pwsh
+        run: |
+          # GitHub windows-latest usually includes WebView2 Runtime.
+          Write-Host "WebView2 check skipped (bundled on hosted runners)."
+
+      - name: Smoke build (no installer)
+        run: npx tauri build --no-bundle

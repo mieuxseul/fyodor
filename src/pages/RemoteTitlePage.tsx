@@ -15,7 +15,15 @@ import {
 
 const PAGE_SIZE = 40
 const SYNOPSIS_PREVIEW = 280
-const SUPPORTED = new Set(['atsu', 'mangadex'])
+const SUPPORTED = new Set(['atsu', 'mangadex', 'kotatsu'])
+
+function parseKotatsuTitleId(titleId: string): { source: string; url: string } | null {
+  const idx = titleId.indexOf('::')
+  if (idx <= 0) return null
+  const source = titleId.slice(0, idx).trim()
+  const url = titleId.slice(idx + 2).trim()
+  return source && url ? { source, url } : null
+}
 
 function cleanSynopsis(raw: string | null | undefined): string {
   return (raw ?? '')
@@ -26,7 +34,9 @@ function cleanSynopsis(raw: string | null | undefined): string {
 }
 
 export function RemoteTitlePage() {
-  const { providerId = '', titleId = '' } = useParams()
+  const params = useParams()
+  const providerId = params.providerId ?? ''
+  const titleId = decodeURIComponent(params.titleId ?? '')
   const navigate = useNavigate()
   const [details, setDetails] = useState<RemoteTitleDetails | null>(null)
   const [chapters, setChapters] = useState<RemoteChapter[]>([])
@@ -65,6 +75,68 @@ export function RemoteTitlePage() {
           if (cancelled) return
           setDetails(bundle.details)
           setChapters(bundle.chapters)
+          setLibraryRef(remoteRef)
+        } else if (providerId === 'kotatsu') {
+          const parsed = parseKotatsuTitleId(titleId)
+          if (!parsed) throw new Error('Invalid Kotatsu title id.')
+          const seedTitle = decodeURIComponent(titleId.split('::').slice(1).join('::'))
+          const [detailPayload, chapterPayload, remoteRef] = await Promise.all([
+            api.kotatsuTitleDetails({
+              source: parsed.source,
+              url: parsed.url,
+              title: seedTitle || 'Untitled',
+            }),
+            api.kotatsuChapters({
+              source: parsed.source,
+              url: parsed.url,
+              title: seedTitle || 'Untitled',
+            }),
+            remoteRefPromise,
+          ])
+          if (cancelled) return
+          const d = detailPayload.details as {
+            id?: string
+            title?: string
+            alternateTitles?: string[]
+            description?: string | null
+            coverUrl?: string | null
+            authors?: string[]
+            tags?: string[]
+            state?: string | null
+            publicUrl?: string
+          }
+          setDetails({
+            id: titleId,
+            title: d.title ?? 'Untitled',
+            alternateTitles: d.alternateTitles ?? [],
+            description: d.description ?? null,
+            coverUrl: d.coverUrl ?? null,
+            contentType: 'manga',
+            publicationStatus: d.state ?? null,
+            genres: d.tags ?? [],
+            tags: d.tags ?? [],
+            author: d.authors?.[0] ?? null,
+            artist: null,
+            websiteUrl: d.publicUrl || parsed.url,
+            isAdult: false,
+            chapterCount: chapterPayload.chapters?.length ?? 0,
+            rating: null,
+            releaseYear: null,
+            latestChapterTitle: chapterPayload.chapters?.[0]?.title ?? null,
+            providerId: 'kotatsu',
+            providerName: `Kotatsu · ${parsed.source}`,
+          })
+          setChapters(
+            (chapterPayload.chapters ?? []).map((chapter) => ({
+              id: `${chapter.id}|||${chapter.url}`,
+              mangaId: titleId,
+              title: chapter.title,
+              number: chapter.number ?? null,
+              pageCount: 0,
+              scanlator: chapter.scanlator ?? null,
+              sortIndex: chapter.sortIndex,
+            })),
+          )
           setLibraryRef(remoteRef)
         } else {
           const [detail, chapterList, remoteRef] = await Promise.all([

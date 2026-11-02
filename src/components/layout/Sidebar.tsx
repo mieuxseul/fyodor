@@ -1,7 +1,6 @@
 import {
   Bookmark,
   Compass,
-  Download,
   History,
   Library,
   Settings,
@@ -23,10 +22,10 @@ import {
   SidebarSeparator,
 } from '@/components/ui/Sidebar'
 
+// Downloads nav stays hidden until remote offline downloads ship.
 const items = [
   { to: '/discover', label: 'Discover', icon: Compass },
   { to: '/library', label: 'Library', icon: Library },
-  { to: '/downloads', label: 'Downloads', icon: Download },
   { to: '/history', label: 'History', icon: History },
   { to: '/bookmarks', label: 'Bookmarks', icon: Bookmark },
   { to: '/sources', label: 'Sources', icon: Sparkles },

@@ -1,6 +1,7 @@
 import { api, isTauri } from '@/lib/api'
 
 import { createAtsuProvider } from './providers/atsu'
+import { createKotatsuProvider } from './providers/kotatsu'
 import { createLocalLibraryProvider } from './providers/local-library'
 import { createMangaDexProvider } from './providers/mangadex'
 import { createMockCatalogProvider } from './providers/mock-catalog'
@@ -130,6 +131,8 @@ export function getSourceNetwork(): ProviderRegistry {
   registry.register(createMangaDexProvider(), true)
   // Atsumaru (atsu.moe) — unofficial site JSON; enabled by default (same pattern as Kotatsu clients).
   registry.register(createAtsuProvider(), true)
+  // Kotatsu-Redo parser catalog via GPL sidecar (1,300+ sources; enable subset in Sources).
+  registry.register(createKotatsuProvider(), true)
   // Mock catalog is available but disabled until the user opts in.
   registry.register(createMockCatalogProvider(), false)
   singleton = registry

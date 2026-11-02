@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
+import { getVersion } from '@tauri-apps/api/app'
 import { save } from '@tauri-apps/plugin-dialog'
 
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { useTheme } from '@/app/ThemeProvider'
 import { api, isTauri } from '@/lib/api'
+import { checkForAppUpdate } from '@/lib/updater'
 import type { AppPaths, ThemePreference } from '@/lib/types'
 
 export function SettingsPage() {
@@ -14,17 +16,25 @@ export function SettingsPage() {
   const [defaultDirection, setDefaultDirection] = useState('ltr')
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [appVersion, setAppVersion] = useState<string>('…')
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [pendingInstall, setPendingInstall] = useState<(() => Promise<void>) | null>(null)
 
   useEffect(() => {
-    if (!isTauri()) return
+    if (!isTauri()) {
+      setAppVersion('web')
+      return
+    }
     void (async () => {
       try {
-        const [appPaths, mode, direction] = await Promise.all([
+        const [appPaths, mode, direction, version] = await Promise.all([
           api.getAppPaths(),
           api.getSetting('default_reading_mode'),
           api.getSetting('default_reading_direction'),
+          getVersion(),
         ])
         setPaths(appPaths)
+        setAppVersion(version)
         if (mode) setDefaultMode(mode)
         if (direction) setDefaultDirection(direction)
       } catch (err) {
@@ -32,6 +42,51 @@ export function SettingsPage() {
       }
     })()
   }, [])
+
+  async function checkUpdates() {
+    if (!isTauri()) return
+    setUpdateBusy(true)
+    setError(null)
+    setNotice(null)
+    setPendingInstall(null)
+    try {
+      const result = await checkForAppUpdate()
+      if (result.status === 'up-to-date') {
+        setNotice(`You're on the latest version (${result.version}).`)
+      } else if (result.status === 'available') {
+        setNotice(
+          `Update ${result.version} is available (current ${result.currentVersion}). Install to download and relaunch.`,
+        )
+        setPendingInstall(() => result.install)
+      } else if (result.status === 'unsupported') {
+        setNotice('Updates require the desktop app.')
+      } else {
+        setError(
+          `${result.message} If you installed the portable .exe, grab the latest NSIS setup from Releases instead.`,
+        )
+        await api.openExternalUrl(
+          'https://github.com/rickshank-rickdemption/fyodor/releases/latest',
+        )
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
+
+  async function installUpdate() {
+    if (!pendingInstall) return
+    setUpdateBusy(true)
+    setError(null)
+    try {
+      setNotice('Downloading update… Fyodor will relaunch when ready.')
+      await pendingInstall()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setUpdateBusy(false)
+    }
+  }
 
   async function persistReadingDefaults() {
     if (!isTauri()) return
@@ -71,6 +126,44 @@ export function SettingsPage() {
       {error ? <p className="mb-4 text-sm text-[var(--fy-danger)]">{error}</p> : null}
 
       <div className="space-y-8">
+        <section className="rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] p-4">
+          <h2 className="font-display text-2xl">Updates</h2>
+          <div className="fy-divider my-3" />
+          <p className="text-sm text-[var(--fy-text-muted)]">
+            Version <span className="font-mono text-[var(--fy-text)]">{appVersion}</span>
+            . Installer builds can update in-app; portable exe users should use GitHub Releases.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              disabled={!isTauri() || updateBusy}
+              onClick={() => void checkUpdates()}
+            >
+              Check for updates
+            </Button>
+            {pendingInstall ? (
+              <Button
+                variant="primary"
+                disabled={updateBusy}
+                onClick={() => void installUpdate()}
+              >
+                Install update
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              disabled={!isTauri()}
+              onClick={() =>
+                void api.openExternalUrl(
+                  'https://github.com/rickshank-rickdemption/fyodor/releases/latest',
+                )
+              }
+            >
+              Open Releases
+            </Button>
+          </div>
+        </section>
+
         <section className="rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] p-4">
           <h2 className="font-display text-2xl">Appearance</h2>
           <div className="fy-divider my-3" />
