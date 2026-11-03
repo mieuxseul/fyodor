@@ -13,6 +13,14 @@ dist-ssr
 *.local
 src-tauri/target
 src-tauri/gen
+sidecars/kotatsu-bridge/.gradle
+sidecars/kotatsu-bridge/build
+sidecars/kotatsu-bridge/.kotlin
+sidecars/*.jar
+src-tauri/resources/*.jar
+*.jar
+!sidecars/kotatsu-bridge/gradle/wrapper/gradle-wrapper.jar
+release/
 .DS_Store
 
 # Kotatsu sidecar build artifacts / local clone (huge)

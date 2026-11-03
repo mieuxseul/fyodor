@@ -14,7 +14,11 @@ Remote downloads are off for now.
 
 ## Install
 
-Grab the latest Windows build from [Releases](https://github.com/rickshank-rickdemption/fyodor/releases).
+Grab the latest **Windows setup** from [Releases](https://github.com/rickshank-rickdemption/fyodor/releases).
+
+Prefer the NSIS installer (`Fyodor_x.y.z_x64-setup.exe`) so Settings → **Check for updates** can upgrade you automatically.
+
+For Kotatsu sources you also need a Java 17+ runtime (the installer ships the bridge jar).
 
 ## Sources
 
@@ -49,7 +53,8 @@ Removing a title from the library does not delete the original files you importe
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+- Fyodor app: MIT — see [LICENSE](LICENSE)
+- `sidecars/kotatsu-bridge`: GPL-3 (kotatsu-dl / kotatsu-parsers lineage)
 
 The optional Kotatsu bridge and vendored kotatsu-parsers-redo sources are GPL-3.0.
 

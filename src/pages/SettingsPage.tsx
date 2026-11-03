@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
+import { getVersion } from '@tauri-apps/api/app'
 import { save } from '@tauri-apps/plugin-dialog'
 
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { useTheme } from '@/app/ThemeProvider'
 import { api, isTauri } from '@/lib/api'
+import { checkForAppUpdate } from '@/lib/updater'
 import type { AppPaths, ThemePreference } from '@/lib/types'
 
 export function SettingsPage() {
@@ -18,15 +20,20 @@ export function SettingsPage() {
   const [updateInfo, setUpdateInfo] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isTauri()) return
+    if (!isTauri()) {
+      setAppVersion('web')
+      return
+    }
     void (async () => {
       try {
-        const [appPaths, mode, direction] = await Promise.all([
+        const [appPaths, mode, direction, version] = await Promise.all([
           api.getAppPaths(),
           api.getSetting('default_reading_mode'),
           api.getSetting('default_reading_direction'),
+          getVersion(),
         ])
         setPaths(appPaths)
+        setAppVersion(version)
         if (mode) setDefaultMode(mode)
         if (direction) setDefaultDirection(direction)
       } catch (err) {
@@ -34,6 +41,51 @@ export function SettingsPage() {
       }
     })()
   }, [])
+
+  async function checkUpdates() {
+    if (!isTauri()) return
+    setUpdateBusy(true)
+    setError(null)
+    setNotice(null)
+    setPendingInstall(null)
+    try {
+      const result = await checkForAppUpdate()
+      if (result.status === 'up-to-date') {
+        setNotice(`You're on the latest version (${result.version}).`)
+      } else if (result.status === 'available') {
+        setNotice(
+          `Update ${result.version} is available (current ${result.currentVersion}). Install to download and relaunch.`,
+        )
+        setPendingInstall(() => result.install)
+      } else if (result.status === 'unsupported') {
+        setNotice('Updates require the desktop app.')
+      } else {
+        setError(
+          `${result.message} If you installed the portable .exe, grab the latest NSIS setup from Releases instead.`,
+        )
+        await api.openExternalUrl(
+          'https://github.com/rickshank-rickdemption/fyodor/releases/latest',
+        )
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
+
+  async function installUpdate() {
+    if (!pendingInstall) return
+    setUpdateBusy(true)
+    setError(null)
+    try {
+      setNotice('Downloading update… Fyodor will relaunch when ready.')
+      await pendingInstall()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setUpdateBusy(false)
+    }
+  }
 
   async function persistReadingDefaults() {
     if (!isTauri()) return

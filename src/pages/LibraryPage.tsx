@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
-import { FolderOpen, LayoutGrid, List, Upload } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CheckSquare, FolderOpen, LayoutGrid, List, Trash2, Upload } from 'lucide-react'
 
 import { CoverCard } from '@/components/library/CoverCard'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { api, isTauri } from '@/lib/api'
-import type { LibraryItem, LibraryView } from '@/lib/types'
+import type { LibraryItem, LibraryView, ReadingStatus } from '@/lib/types'
 
 const STATUS_FILTERS = [
   { id: 'all', label: 'All' },
@@ -15,7 +16,31 @@ const STATUS_FILTERS = [
   { id: 'planned', label: 'Planned' },
   { id: 'on_hold', label: 'On hold' },
   { id: 'dropped', label: 'Dropped' },
+] as const
+
+const ORIGIN_FILTERS = [
+  { id: 'all', label: 'All origins' },
+  { id: 'local', label: 'Local' },
+  { id: 'remote', label: 'Remote' },
+] as const
+
+const TYPE_FILTERS = [
+  { id: 'all', label: 'All types' },
+  { id: 'manga', label: 'Manga' },
+  { id: 'manhwa', label: 'Manhwa' },
+  { id: 'comic', label: 'Comic' },
+] as const
+
+const BULK_STATUSES: Array<{ id: ReadingStatus; label: string }> = [
+  { id: 'reading', label: 'Reading' },
+  { id: 'completed', label: 'Completed' },
+  { id: 'planned', label: 'Planned' },
+  { id: 'on_hold', label: 'On hold' },
+  { id: 'dropped', label: 'Dropped' },
 ]
+
+type OriginFilter = (typeof ORIGIN_FILTERS)[number]['id']
+type TypeFilter = (typeof TYPE_FILTERS)[number]['id']
 
 export function LibraryPage() {
   const [items, setItems] = useState<LibraryItem[]>([])
@@ -33,7 +58,7 @@ export function LibraryPage() {
   const load = useCallback(async () => {
     if (!isTauri()) {
       setLoading(false)
-      setError('Launch with `npm run tauri:dev` to use the local library.')
+      setError('Launch Fyodor desktop to use the local library.')
       return
     }
     setLoading(true)
@@ -60,12 +85,98 @@ export function LibraryPage() {
   }, [status, sort, scope])
 
   useEffect(() => {
+    if (!isTauri()) {
+      setPrefsReady(true)
+      return
+    }
+    void (async () => {
+      try {
+        const [savedView, savedSort, savedStatus, savedOrigin, savedType] = await Promise.all([
+          api.getSetting('library_view'),
+          api.getSetting('library_sort'),
+          api.getSetting('library_status'),
+          api.getSetting('library_origin'),
+          api.getSetting('library_content_type'),
+        ])
+        if (savedView === 'grid' || savedView === 'list') setView(savedView)
+        if (savedSort) setSort(savedSort)
+        if (savedStatus) setStatus(savedStatus)
+        if (savedOrigin === 'all' || savedOrigin === 'local' || savedOrigin === 'remote') {
+          setOrigin(savedOrigin)
+        }
+        if (
+          savedType === 'all' ||
+          savedType === 'manga' ||
+          savedType === 'manhwa' ||
+          savedType === 'comic'
+        ) {
+          setContentType(savedType)
+        }
+      } finally {
+        setPrefsReady(true)
+      }
+    })()
+  }, [])
+
+  useEffect(() => {
+    if (!prefsReady) return
     void load()
-  }, [load])
+  }, [prefsReady, load])
+
+  useEffect(() => {
+    if (!isTauri() || !prefsReady) return
+    void api.setSetting('library_sort', sort)
+  }, [sort, prefsReady])
+
+  useEffect(() => {
+    if (!isTauri() || !prefsReady) return
+    void api.setSetting('library_status', status)
+  }, [status, prefsReady])
+
+  useEffect(() => {
+    if (!isTauri() || !prefsReady) return
+    void api.setSetting('library_origin', origin)
+  }, [origin, prefsReady])
+
+  useEffect(() => {
+    if (!isTauri() || !prefsReady) return
+    void api.setSetting('library_content_type', contentType)
+  }, [contentType, prefsReady])
+
+  const visibleItems = useMemo(() => {
+    return items.filter((item) => {
+      if (origin === 'remote' && item.entry.isLocal) return false
+      if (contentType !== 'all') {
+        const type = (item.title.contentType || 'manga').toLowerCase()
+        if (type !== contentType) return false
+      }
+      return true
+    })
+  }, [items, origin, contentType])
 
   async function changeView(next: LibraryView) {
     setView(next)
     if (isTauri()) await api.setSetting('library_view', next)
+  }
+
+  function toggleSelect(titleId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(titleId)) next.delete(titleId)
+      else next.add(titleId)
+      return next
+    })
+  }
+
+  function toggleSelectMode() {
+    setSelectMode((on) => {
+      if (on) setSelected(new Set())
+      return !on
+    })
+  }
+
+  function selectAllVisible() {
+    setSelected(new Set(visibleItems.map((item) => item.title.id)))
   }
 
   async function importArchives() {
@@ -77,7 +188,12 @@ export function LibraryPage() {
       if (results.length === 0) {
         setNotice('Import cancelled.')
       } else {
-        setNotice(`Imported ${results.length} title${results.length === 1 ? '' : 's'}.`)
+        const warnings = results.flatMap((item) => item.warnings ?? [])
+        setNotice(
+          `Imported ${results.length} title${results.length === 1 ? '' : 's'}${
+            warnings.length ? ` · ${warnings.length} warning${warnings.length === 1 ? '' : 's'}` : ''
+          }.`,
+        )
         await load()
       }
     } catch (err) {
@@ -162,7 +278,7 @@ export function LibraryPage() {
         >
           <option value="recent">Recently opened</option>
           <option value="added">Recently added</option>
-          <option value="title">Title</option>
+          <option value="title">Title A–Z</option>
           <option value="progress">Reading progress</option>
         </select>
         <div className="flex overflow-hidden rounded-md border border-[var(--fy-border-subtle)]">
@@ -248,6 +364,45 @@ export function LibraryPage() {
         ) : null}
       </div>
 
+      {selectMode ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] px-3 py-2">
+          <span className="text-sm text-[var(--fy-text-muted)]">
+            {selected.size} selected
+          </span>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={selectAllVisible}>
+            Select all visible
+          </Button>
+          <select
+            className="rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-2 py-1.5 text-xs"
+            defaultValue=""
+            disabled={busy || selected.size === 0}
+            onChange={(e) => {
+              const value = e.target.value as ReadingStatus
+              if (!value) return
+              void bulkSetStatus(value)
+              e.currentTarget.value = ''
+            }}
+          >
+            <option value="" disabled>
+              Set status…
+            </option>
+            {BULK_STATUSES.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy || selected.size === 0}
+            onClick={() => void bulkRemove()}
+          >
+            <Trash2 size={14} /> Remove
+          </Button>
+        </div>
+      ) : null}
+
       {notice ? (
         <p className="mb-2.5 fy-liquid-tile px-2.5 py-1.5 text-xs">
           {notice}
@@ -259,16 +414,34 @@ export function LibraryPage() {
         </p>
       ) : null}
 
-      {loading ? (
+      {loading || !prefsReady ? (
         <p className="text-sm text-[var(--fy-text-muted)]">Loading library…</p>
-      ) : items.length === 0 ? (
+      ) : visibleItems.length === 0 ? (
         <EmptyState
-          title="No titles in the library"
-          description="Import a CBZ/ZIP archive or an image folder to begin your collection. Original files are never deleted when you remove a title."
+          title={items.length === 0 ? 'No titles in the library' : 'No titles match these filters'}
+          description={
+            items.length === 0
+              ? 'Import CBZ/ZIP archives (multi-select supported) or an image folder. Original files stay on disk when you remove a title.'
+              : 'Try clearing filters or switching origin/type.'
+          }
           action={
-            <Button variant="primary" disabled={!isTauri() || busy} onClick={() => void importArchives()}>
-              Import CBZ
-            </Button>
+            items.length === 0 ? (
+              <Button variant="primary" disabled={!isTauri() || busy} onClick={() => void importArchives()}>
+                Import CBZ
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setStatus('all')
+                  setOrigin('all')
+                  setContentType('all')
+                  setQuery('')
+                }}
+              >
+                Clear filters
+              </Button>
+            )
           }
         />
       ) : view === 'grid' ? (

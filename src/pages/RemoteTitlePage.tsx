@@ -36,7 +36,9 @@ function cleanSynopsis(raw: string | null | undefined): string {
 }
 
 export function RemoteTitlePage() {
-  const { providerId = '', titleId = '' } = useParams()
+  const params = useParams()
+  const providerId = params.providerId ?? ''
+  const titleId = decodeURIComponent(params.titleId ?? '')
   const navigate = useNavigate()
   const [details, setDetails] = useState<RemoteTitleDetails | null>(null)
   const [chapters, setChapters] = useState<RemoteChapter[]>([])

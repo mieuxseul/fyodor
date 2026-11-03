@@ -93,7 +93,13 @@ export function DiscoverPage() {
 
     const mangadex = group.editions.find((edition) => edition.providerId === 'mangadex')
     if (mangadex) {
-      navigate(`/remote/mangadex/${mangadex.providerTitleId}`)
+      navigate(`/remote/mangadex/${encodeURIComponent(mangadex.providerTitleId)}`)
+      return
+    }
+
+    const kotatsu = group.editions.find((edition) => edition.providerId === 'kotatsu')
+    if (kotatsu) {
+      navigate(`/remote/kotatsu/${encodeURIComponent(kotatsu.providerTitleId)}`)
       return
     }
 

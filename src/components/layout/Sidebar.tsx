@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/Sidebar'
 import { cn } from '@/lib/cn'
 
+// Downloads nav stays hidden until remote offline downloads ship.
 const items = [
   { to: '/discover', label: 'Discover', icon: Compass },
   { to: '/library', label: 'Library', icon: Library },
