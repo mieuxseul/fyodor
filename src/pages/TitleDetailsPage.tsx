@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import { ChapterReadControls } from '@/components/ChapterReadControls'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { RemoteCover } from '@/components/RemoteCover'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { api, isTauri } from '@/lib/api'
+import { cn } from '@/lib/cn'
+import {
+  loadLocalReadChapters,
+  markLocalChapterRead,
+  markLocalChapterUnread,
+  markLocalPreviousRead,
+} from '@/lib/local-read-chapters'
 import type { TitleDetails } from '@/lib/types'
 
 export function TitleDetailsPage() {
@@ -22,6 +30,7 @@ export function TitleDetailsPage() {
   const [mode, setMode] = useState('page')
   const [notice, setNotice] = useState<string | null>(null)
   const [relinking, setRelinking] = useState(false)
+  const [readChapterIds, setReadChapterIds] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
     if (!titleId || !isTauri()) return
@@ -56,6 +65,12 @@ export function TitleDetailsPage() {
           setDirection(edition.readingDirection)
           setMode(edition.readingMode)
         }
+        const editionId = data.entry?.preferredEditionId ?? data.editions[0]?.id
+        if (editionId) {
+          setReadChapterIds(new Set(loadLocalReadChapters(editionId).readChapterIds))
+        } else {
+          setReadChapterIds(new Set())
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
       }
@@ -64,6 +79,16 @@ export function TitleDetailsPage() {
       cancelled = true
     }
   }, [titleId])
+
+  useEffect(() => {
+    const editionId = details?.entry?.preferredEditionId ?? details?.editions[0]?.id
+    if (!editionId) return
+    const refresh = () => {
+      setReadChapterIds(new Set(loadLocalReadChapters(editionId).readChapterIds))
+    }
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [details?.entry?.preferredEditionId, details?.editions])
 
   async function saveMetadata() {
     if (!details) return
@@ -154,6 +179,7 @@ export function TitleDetailsPage() {
 
   const nextChapter =
     details.chapters.find((c) => c.id === details.progress?.chapterId) ?? details.chapters[0]
+  const editionId = details.entry?.preferredEditionId ?? details.editions[0]?.id
 
   return (
     <div>
@@ -176,14 +202,14 @@ export function TitleDetailsPage() {
       />
 
       {notice ? (
-        <p className="mb-4 rounded-lg border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] px-3 py-2 text-sm">
+        <p className="mb-4 fy-liquid-tile px-3 py-2 text-sm">
           {notice}
         </p>
       ) : null}
 
       <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
         <div>
-          <div className="aspect-[2/3] overflow-hidden rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)]">
+          <div className="aspect-[2/3] overflow-hidden fy-liquid-tile">
             <RemoteCover
               path={details.title.coverPath}
               placeholder={details.title.primaryTitle}
@@ -198,7 +224,7 @@ export function TitleDetailsPage() {
         </div>
 
         <div className="space-y-8">
-          <section className="space-y-3 rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] p-4">
+          <section className="space-y-3 fy-liquid-tile p-4">
             <h2 className="text-xl font-semibold tracking-tight">Metadata</h2>
             <label className="block text-sm">
               <span className="mb-1 block text-[var(--fy-text-muted)]">Title</span>
@@ -282,20 +308,55 @@ export function TitleDetailsPage() {
             {details.chapters.length === 0 ? (
               <p className="text-sm text-[var(--fy-text-muted)]">No chapters available.</p>
             ) : (
-              <ul className="divide-y divide-[var(--fy-border-subtle)] rounded-sm border border-[var(--fy-border-subtle)]">
-                {details.chapters.map((chapter) => (
-                  <li key={chapter.id} className="flex items-center justify-between gap-3 px-3 py-2">
-                    <div>
-                      <div className="text-sm">{chapter.title}</div>
-                      <div className="font-mono text-[11px] text-[var(--fy-text-muted)]">
-                        {chapter.pageCount} pages
+              <ul className="divide-y divide-[color-mix(in_srgb,var(--fy-text-muted)_28%,transparent)] rounded-sm border border-[color-mix(in_srgb,var(--fy-text-muted)_22%,transparent)]">
+                {details.chapters.map((chapter) => {
+                  const isCurrent = chapter.id === details.progress?.chapterId
+                  const isRead =
+                    readChapterIds.has(chapter.id) ||
+                    (isCurrent && Boolean(details.progress?.completed))
+                  return (
+                    <li
+                      key={chapter.id}
+                      className="flex items-center justify-between gap-2 px-3 py-2"
+                    >
+                      <div className={cn('min-w-0 flex-1', isRead && 'text-[var(--fy-text-muted)]')}>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="truncate">{chapter.title}</span>
+                          {isCurrent ? (
+                            <span className="text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
+                              Current
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="font-mono text-[11px] text-[var(--fy-text-muted)]">
+                          {chapter.pageCount} pages
+                        </div>
                       </div>
-                    </div>
-                    <Button size="sm" onClick={() => openReader(chapter.id)}>
-                      Read
-                    </Button>
-                  </li>
-                ))}
+                      {editionId ? (
+                        <ChapterReadControls
+                          isRead={isRead}
+                          onToggleRead={() => {
+                            const next = isRead
+                              ? markLocalChapterUnread(editionId, chapter.id)
+                              : markLocalChapterRead(editionId, chapter.id)
+                            setReadChapterIds(new Set(next.readChapterIds))
+                          }}
+                          onMarkPrevious={() => {
+                            const next = markLocalPreviousRead(
+                              editionId,
+                              chapter.id,
+                              details.chapters,
+                            )
+                            setReadChapterIds(new Set(next.readChapterIds))
+                          }}
+                        />
+                      ) : null}
+                      <Button size="sm" onClick={() => openReader(chapter.id)}>
+                        {isCurrent ? 'Continue' : isRead ? 'Re-read' : 'Read'}
+                      </Button>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </section>

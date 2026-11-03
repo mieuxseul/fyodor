@@ -97,13 +97,19 @@ export function DiscoverPage() {
       return
     }
 
+    const kotatsu = group.editions.find((edition) => edition.providerId === 'kotatsu')
+    if (kotatsu) {
+      navigate(`/remote/kotatsu/${encodeURIComponent(kotatsu.providerTitleId)}`)
+      return
+    }
+
     const mock = group.editions.find((edition) => edition.providerId === 'mock-catalog')
     if (mock) {
       setActionError('Test catalog titles have no remote details page.')
       return
     }
 
-    setActionError('No in-app details route for this provider yet. Enable Atsumaru or MangaDex.')
+    setActionError('No in-app details route for this provider yet.')
   }
 
   const filteredGroups = useMemo(() => {
@@ -143,7 +149,7 @@ export function DiscoverPage() {
       />
 
       <form
-        className="mb-4 flex flex-wrap gap-2"
+        className="mb-2.5 flex flex-wrap gap-1.5"
         onSubmit={(event) => {
           event.preventDefault()
           void runSearch()
@@ -153,21 +159,21 @@ export function DiscoverPage() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search titles across enabled sources…"
-          className="min-w-[240px] flex-1 rounded-xl border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] px-3 py-2 text-sm outline-none focus:border-[var(--fy-border)]"
+          className="min-w-[200px] flex-1 fy-liquid-tile px-2.5 py-1.5 text-sm outline-none focus:border-[var(--fy-border)]"
         />
-        <Button type="submit" variant="primary" disabled={!ready || searching || !query.trim()}>
+        <Button type="submit" variant="primary" size="sm" disabled={!ready || searching || !query.trim()}>
           Search
         </Button>
-        <Button type="button" variant="secondary" disabled={!searching} onClick={cancelSearch}>
+        <Button type="button" variant="secondary" size="sm" disabled={!searching} onClick={cancelSearch}>
           Cancel
         </Button>
       </form>
 
-      <div className="mb-5 flex flex-wrap gap-2">
+      <div className="mb-3 flex flex-wrap gap-1.5">
         <select
           value={contentType}
           onChange={(e) => setContentType(e.target.value)}
-          className="rounded-lg border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] px-2.5 py-1.5 text-sm"
+          className="fy-liquid-tile px-2 py-1.5 text-xs"
           aria-label="Filter by content type"
         >
           <option value="all">All types</option>
@@ -178,7 +184,7 @@ export function DiscoverPage() {
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value)}
-          className="rounded-lg border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] px-2.5 py-1.5 text-sm"
+          className="fy-liquid-tile px-2 py-1.5 text-xs"
           aria-label="Filter by publication status"
         >
           <option value="all">All statuses</option>
@@ -190,7 +196,7 @@ export function DiscoverPage() {
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value)}
-          className="rounded-lg border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] px-2.5 py-1.5 text-sm"
+          className="fy-liquid-tile px-2 py-1.5 text-xs"
           aria-label="Sort results"
         >
           <option value="title">Sort by title</option>
@@ -239,7 +245,7 @@ export function DiscoverPage() {
       ) : (
         <div className="space-y-4">
           {hasFailures ? (
-            <div className="rounded-xl border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] px-3 py-2 text-sm text-[var(--fy-text-muted)]">
+            <div className="fy-liquid-tile px-3 py-2 text-sm text-[var(--fy-text-muted)]">
               Some providers failed or timed out, but successful results are shown below.
               <ul className="mt-2 space-y-1 font-mono text-[11px]">
                 {report.outcomes

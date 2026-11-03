@@ -5,18 +5,18 @@ import type { ButtonHTMLAttributes } from 'react'
 import { cn } from '@/lib/cn'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+  'inline-flex items-center justify-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50',
   {
     variants: {
       variant: {
         primary:
-          'border-transparent bg-[var(--fy-primary)] text-[var(--fy-panel-solid)] shadow-sm hover:bg-[var(--fy-primary-hover)]',
+          'border-transparent bg-[var(--fy-primary)] text-[var(--fy-bg)] shadow-sm hover:bg-[var(--fy-primary-hover)]',
         secondary:
-          'border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)]/70 text-[var(--fy-text)] backdrop-blur-sm hover:bg-[var(--fy-nav-hover)]',
+          'fy-liquid-control text-[var(--fy-text)] hover:border-[var(--fy-border-subtle)]',
         outline:
-          'border-[var(--fy-border)] bg-white text-[var(--fy-text)] shadow-sm hover:bg-[var(--fy-bg)]',
+          'fy-liquid-control text-[var(--fy-text)] hover:border-[var(--fy-border-subtle)]',
         ghost:
-          'border-transparent bg-transparent text-[var(--fy-text-muted)] hover:bg-[var(--fy-nav-hover)] hover:text-[var(--fy-text)]',
+          'border-transparent bg-transparent text-[var(--fy-text-muted)] hover:bg-white/10 hover:text-[var(--fy-text)]',
         danger:
           'border-transparent bg-[var(--fy-danger)] text-white hover:opacity-90',
       },

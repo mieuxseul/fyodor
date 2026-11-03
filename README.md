@@ -8,7 +8,7 @@ A desktop manga and manhwa reader. Local library first; online sources when you 
 - Browse titles with reading progress, history, and bookmarks
 - Paged and vertical-scroll reading modes
 - Discover and read from enabled online sources
-- Built-in support for MangaDex and Atsumaru
+- Built-in MangaDex + Atsumaru, plus the full Kotatsu-Redo catalog (~1385 sources) via an optional sidecar
 
 Remote downloads are off for now.
 
@@ -18,10 +18,28 @@ Grab the latest Windows build from [Releases](https://github.com/rickshank-rickd
 
 ## Sources
 
-- **MangaDex** — search, metadata, chapters, and in-app reading via the official API
-- **Atsumaru** — search, chapters, and in-app reading (unofficial; not affiliated)
+- **MangaDex** — official API
+- **Atsumaru** — unofficial site JSON (not affiliated)
+- **Kotatsu sources** — [Kotatsu-Redo parsers](https://github.com/Kotatsu-Redo/kotatsu-parsers-redo) (~1385). Enable individual sites under **Sources → Kotatsu catalog**.
 
-Manage source availability under **Sources** in the app.
+Kotatsu support uses a separate GPL-3.0 Java bridge (`sidecars/kotatsu-bridge`). Fyodor itself stays MIT; the bridge JAR is GPL because it links kotatsu-parsers-redo.
+
+### Build the Kotatsu bridge (optional)
+
+Requires JDK 17+.
+
+```bash
+# once: publish parsers to local Maven
+cd sidecars/kotatsu-parsers-redo
+./gradlew publishToMavenLocal
+
+# build the shadow JAR
+cd ../kotatsu-bridge
+./gradlew shadowJar
+copy build/libs/kotatsu-bridge.jar ../bin/kotatsu-bridge.jar
+```
+
+Point `JAVA_HOME` at a JDK, or install under `%LOCALAPPDATA%\jdk-17`. Override the JAR with `FYODOR_KOTATSU_BRIDGE`.
 
 ## Data
 
@@ -32,6 +50,8 @@ Removing a title from the library does not delete the original files you importe
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+The optional Kotatsu bridge and vendored kotatsu-parsers-redo sources are GPL-3.0.
 
 ## Contributing
 

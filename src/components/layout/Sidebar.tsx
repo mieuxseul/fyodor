@@ -1,9 +1,9 @@
 import {
   Bookmark,
   Compass,
-  Download,
   History,
   Library,
+  PanelLeft,
   Settings,
   Sparkles,
 } from 'lucide-react'
@@ -19,14 +19,15 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRail,
   SidebarSeparator,
+  useSidebar,
 } from '@/components/ui/Sidebar'
+import { cn } from '@/lib/cn'
 
 const items = [
   { to: '/discover', label: 'Discover', icon: Compass },
   { to: '/library', label: 'Library', icon: Library },
-  { to: '/downloads', label: 'Downloads', icon: Download },
+  // Downloads hidden until offline remote downloads ship.
   { to: '/history', label: 'History', icon: History },
   { to: '/bookmarks', label: 'Bookmarks', icon: Bookmark },
   { to: '/sources', label: 'Sources', icon: Sparkles },
@@ -35,22 +36,58 @@ const items = [
 
 export function AppSidebar() {
   const location = useLocation()
+  const { state, toggleSidebar } = useSidebar()
+  const collapsed = state === 'collapsed'
 
   return (
-    <Sidebar collapsible="icon" variant="sidebar">
-      <SidebarHeader className="items-center gap-1 px-2 py-4 group-data-[collapsible=icon]:px-0">
-        <div className="font-brand text-center text-[1.85rem] leading-none text-sidebar-foreground group-data-[collapsible=icon]:hidden">
-          Fyodor
-        </div>
-        <div className="font-brand hidden text-center text-lg leading-none text-sidebar-foreground group-data-[collapsible=icon]:block">
-          F
-        </div>
-        <p className="text-center text-[11px] text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden">
-          A library of worlds.
-        </p>
+    <Sidebar collapsible="icon" variant="floating">
+      <SidebarHeader
+        className={cn(
+          'gap-1 px-2 py-3',
+          collapsed ? 'items-center px-0' : 'items-stretch',
+        )}
+      >
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label="Expand sidebar"
+            title="Expand sidebar"
+            className="group/brand relative mx-auto flex size-9 items-center justify-center rounded-xl text-[var(--fy-text)] transition hover:bg-[var(--fy-nav-active)]"
+          >
+            <span className="font-brand text-lg leading-none transition-opacity group-hover/brand:opacity-0">
+              F
+            </span>
+            <PanelLeft
+              size={16}
+              className="absolute opacity-0 transition-opacity group-hover/brand:opacity-100"
+              aria-hidden
+            />
+          </button>
+        ) : (
+          <div className="flex items-start gap-2 px-1">
+            <div className="min-w-0 flex-1 pt-0.5">
+              <div className="font-brand text-[1.85rem] leading-none text-[var(--fy-text)]">
+                Fyodor
+              </div>
+              <p className="mt-1 text-[11px] text-[var(--fy-text-muted)]">
+                A library of worlds.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-label="Collapse sidebar"
+              title="Collapse sidebar"
+              className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-[var(--fy-text-muted)] transition hover:bg-[var(--fy-nav-active)] hover:text-[var(--fy-text)]"
+            >
+              <PanelLeft size={16} />
+            </button>
+          </div>
+        )}
       </SidebarHeader>
 
-      <SidebarSeparator />
+      <SidebarSeparator className={cn(collapsed && 'mx-auto w-6')} />
 
       <SidebarContent>
         <SidebarGroup>
@@ -89,7 +126,6 @@ export function AppSidebar() {
           </span>
         </div>
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   )
 }

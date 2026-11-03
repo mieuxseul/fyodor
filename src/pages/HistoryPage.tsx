@@ -89,7 +89,7 @@ export function HistoryPage() {
             return (
               <li
                 key={item.id}
-                className="flex items-center gap-4 rounded-xl border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] px-3 py-2"
+                className="flex items-center gap-4 fy-liquid-tile px-3 py-2"
               >
                 <button
                   type="button"

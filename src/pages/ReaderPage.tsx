@@ -24,8 +24,11 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { api, isTauri, resolveRemoteImageUrl, toAssetUrl } from '@/lib/api'
+import { api, isTauri, resolveRemoteImageUrl, toAssetUrl, toFyodorCdnUrl } from '@/lib/api'
 import { cn } from '@/lib/cn'
+import { markLocalChapterRead } from '@/lib/local-read-chapters'
+import { loadRemoteProgress, saveRemoteProgress } from '@/lib/remote-progress'
+import { decodeKotatsuTitleId } from '@/source-network/providers/kotatsu'
 import type {
   Chapter,
   Edition,
@@ -36,12 +39,12 @@ import type {
   Title,
 } from '@/lib/types'
 
-type RemoteProvider = 'atsu' | 'mangadex'
+type RemoteProvider = 'atsu' | 'mangadex' | 'kotatsu'
 
 function parseRemoteEdition(
   editionId: string,
 ): { provider: RemoteProvider; mangaId: string } | null {
-  for (const provider of ['atsu', 'mangadex'] as const) {
+  for (const provider of ['atsu', 'mangadex', 'kotatsu'] as const) {
     const prefix = `${provider}:`
     if (editionId.startsWith(prefix)) {
       const mangaId = editionId.slice(prefix.length).trim()
@@ -120,12 +123,20 @@ export function ReaderPage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pagesError, setPagesError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [pagesLoading, setPagesLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const saveTimer = useRef<number | null>(null)
+  const pageCacheRef = useRef(new Map<string, string[]>())
+  const prefetchingRef = useRef(new Set<string>())
+  const loadChapterRef = useRef<(id: string, restorePage?: number) => Promise<void>>(
+    async () => undefined,
+  )
+  const chapterQueryOnOpenRef = useRef<string | null>(searchParams.get('chapter'))
+  const chapterIdRef = useRef<string | null>(null)
 
   const chapterIndex = useMemo(() => {
     if (!session || !chapterId) return 0
@@ -134,9 +145,18 @@ export function ReaderPage() {
 
   const persistProgress = useCallback(
     async (nextPage: number, scrollRatio = 0, completed = false) => {
-      if (!editionId || !chapterId || !isTauri() || isRemote) return
+      if (!editionId || !chapterId || !isTauri()) return
       if (saveTimer.current) window.clearTimeout(saveTimer.current)
       saveTimer.current = window.setTimeout(() => {
+        if (remote) {
+          saveRemoteProgress(remote.provider, remote.mangaId, {
+            chapterId,
+            pageIndex: nextPage,
+            markReadChapterId: completed ? chapterId : undefined,
+          })
+          return
+        }
+        markLocalChapterRead(editionId, chapterId)
         void api.saveReadingProgress({
           editionId,
           chapterId,
@@ -144,39 +164,88 @@ export function ReaderPage() {
           scrollRatio,
           completed,
         })
-      }, 400)
+      }, 280)
     },
-    [editionId, chapterId, isRemote],
+    [editionId, chapterId, remote],
+  )
+
+  const fetchChapterPages = useCallback(
+    async (id: string): Promise<string[]> => {
+      const cached = pageCacheRef.current.get(id)
+      if (cached) return cached
+
+      let pages: string[]
+      if (remote?.provider === 'atsu') {
+        pages = (await api.atsuChapterPages(remote.mangaId, id)).pages
+      } else if (remote?.provider === 'mangadex') {
+        pages = (await api.mangadexChapterPages(remote.mangaId, id)).pages
+      } else if (remote?.provider === 'kotatsu') {
+        const decoded = decodeKotatsuTitleId(remote.mangaId)
+        if (!decoded) throw new Error('Invalid Kotatsu title id')
+        pages = (await api.kotatsuChapterPages(decoded.source, id)).pages
+      } else {
+        pages = (await api.getChapterPages(id)).pages
+      }
+      pageCacheRef.current.set(id, pages)
+      return pages
+    },
+    [remote],
+  )
+
+  const prefetchChapter = useCallback(
+    (id: string | undefined) => {
+      if (!id || pageCacheRef.current.has(id) || prefetchingRef.current.has(id)) return
+      prefetchingRef.current.add(id)
+      void fetchChapterPages(id)
+        .catch(() => {
+          /* prefetch is best-effort */
+        })
+        .finally(() => {
+          prefetchingRef.current.delete(id)
+        })
+    },
+    [fetchChapterPages],
   )
 
   const loadChapter = useCallback(
     async (id: string, restorePage = 0) => {
       setPagesLoading(true)
+      setPagesError(null)
       try {
-        if (remote?.provider === 'atsu') {
-          const data = await api.atsuChapterPages(remote.mangaId, id)
-          setPages(data.pages)
-          setChapterId(id)
-          setPageIndex(Math.min(restorePage, Math.max(data.pages.length - 1, 0)))
-          return
-        }
-        if (remote?.provider === 'mangadex') {
-          const data = await api.mangadexChapterPages(remote.mangaId, id)
-          setPages(data.pages)
-          setChapterId(id)
-          setPageIndex(Math.min(restorePage, Math.max(data.pages.length - 1, 0)))
-          return
-        }
-        const data = await api.getChapterPages(id)
-        setPages(data.pages)
+        const nextPages = await fetchChapterPages(id)
+        setPages(nextPages)
         setChapterId(id)
-        setPageIndex(Math.min(restorePage, Math.max(data.pages.length - 1, 0)))
+        setPageIndex(Math.min(restorePage, Math.max(nextPages.length - 1, 0)))
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        const rateLimited = /429|rate.?limit|too many/i.test(message)
+        setPagesError(
+          rateLimited
+            ? 'Source is rate-limiting requests. Wait a moment, then try again.'
+            : message,
+        )
+        throw err
       } finally {
         setPagesLoading(false)
       }
     },
-    [remote],
+    [fetchChapterPages],
   )
+
+  useEffect(() => {
+    loadChapterRef.current = loadChapter
+  }, [loadChapter])
+
+  useEffect(() => {
+    chapterIdRef.current = chapterId
+  }, [chapterId])
+
+  useEffect(() => {
+    if (!session || !chapterId) return
+    const index = session.chapters.findIndex((c) => c.id === chapterId)
+    if (index < 0) return
+    prefetchChapter(session.chapters[index + 1]?.id)
+  }, [session, chapterId, prefetchChapter])
 
   useEffect(() => {
     if (!editionId || !isTauri()) {
@@ -185,52 +254,107 @@ export function ReaderPage() {
       return
     }
 
+    const remoteSession = parseRemoteEdition(editionId)
+    chapterQueryOnOpenRef.current = searchParams.get('chapter')
+    const requestedChapter = chapterQueryOnOpenRef.current
     let cancelled = false
+    setLoading(true)
+    setError(null)
+    setSession(null)
+    setPages([])
+    setChapterId(null)
+    setPageIndex(0)
+
     void (async () => {
       try {
-        if (remote) {
-          // Sequential MangaDex calls avoid bursting into HTTP 429 rate limits.
-          const chapters =
-            remote.provider === 'atsu'
-              ? await api.atsuChapters(remote.mangaId)
-              : await api.mangadexChapters(remote.mangaId)
+        if (remoteSession) {
+          let chapters: {
+            id: string
+            title: string
+            number?: number | null
+            pageCount: number
+            sortIndex: number
+          }[] = []
+          if (remoteSession.provider === 'atsu') {
+            chapters = await api.atsuChapters(remoteSession.mangaId)
+          } else if (remoteSession.provider === 'mangadex') {
+            chapters = await api.mangadexChapters(remoteSession.mangaId)
+          } else {
+            const decoded = decodeKotatsuTitleId(remoteSession.mangaId)
+            if (!decoded) throw new Error('Invalid Kotatsu title id')
+            const list = await api.kotatsuChapters(decoded.source, decoded.url)
+            chapters = list.map((ch) => ({
+              id: ch.url,
+              title: ch.title,
+              number: ch.number ?? null,
+              pageCount: 0,
+              sortIndex: ch.sortIndex,
+            }))
+          }
           if (cancelled) return
 
           let title = 'Untitled'
-          let providerName = remote.provider === 'atsu' ? 'Atsumaru' : 'MangaDex'
+          let providerName =
+            remoteSession.provider === 'atsu'
+              ? 'Atsumaru'
+              : remoteSession.provider === 'mangadex'
+                ? 'MangaDex'
+                : 'Kotatsu'
           let contentType = 'manga'
           try {
-            const details =
-              remote.provider === 'atsu'
-                ? await api.atsuTitleDetails(remote.mangaId)
-                : await api.mangadexTitleDetails(remote.mangaId)
-            if (cancelled) return
-            title = details.title
-            providerName = details.providerName
-            contentType = details.contentType
+            if (remoteSession.provider === 'atsu') {
+              const details = await api.atsuTitleDetails(remoteSession.mangaId)
+              if (cancelled) return
+              title = details.title
+              providerName = details.providerName
+              contentType = details.contentType
+            } else if (remoteSession.provider === 'mangadex') {
+              const details = await api.mangadexTitleDetails(remoteSession.mangaId)
+              if (cancelled) return
+              title = details.title
+              providerName = details.providerName
+              contentType = details.contentType
+            } else {
+              const decoded = decodeKotatsuTitleId(remoteSession.mangaId)
+              if (decoded) {
+                const details = await api.kotatsuTitleDetails(decoded.source, decoded.url)
+                if (cancelled) return
+                title = String(details.title ?? title)
+                providerName = `Kotatsu · ${decoded.source}`
+              }
+            }
           } catch {
             // Title metadata is optional once chapters are available.
           }
 
-          const remoteSession = buildRemoteSession(
-            remote.provider,
-            remote.mangaId,
+          const built = buildRemoteSession(
+            remoteSession.provider,
+            remoteSession.mangaId,
             title,
             providerName,
             contentType,
             chapters,
           )
-          setSession(remoteSession)
+          setSession(built)
           setMode(contentType === 'manhwa' ? 'vertical' : 'page')
           setDirection('ltr')
 
-          const requested = searchParams.get('chapter')
-          const initialChapter = requested || remoteSession.chapters[0]?.id || null
+          const saved = loadRemoteProgress(remoteSession.provider, remoteSession.mangaId)
+          const initialChapter =
+            requestedChapter || saved?.chapterId || built.chapters[0]?.id || null
           if (!initialChapter) {
             setError('No chapters available for this title.')
             return
           }
-          await loadChapter(initialChapter, 0)
+          const restorePage =
+            requestedChapter && requestedChapter !== saved?.chapterId
+              ? 0
+              : (saved?.pageIndex ?? 0)
+          try {
+            await loadChapterRef.current(initialChapter, restorePage)
+          } catch {
+            /* pagesError overlay */
+          }
           return
         }
 
@@ -240,14 +364,22 @@ export function ReaderPage() {
         setMode((data.edition.readingMode as ReadingMode) || 'page')
         setDirection((data.edition.readingDirection as ReadingDirection) || 'ltr')
 
-        const requested = searchParams.get('chapter')
         const initialChapter =
-          requested || data.progress?.chapterId || data.chapters[0]?.id || null
+          requestedChapter || data.progress?.chapterId || data.chapters[0]?.id || null
         if (!initialChapter) {
           setError('No chapters available for this edition.')
           return
         }
-        await loadChapter(initialChapter, data.progress?.pageIndex ?? 0)
+        try {
+          await loadChapterRef.current(
+            initialChapter,
+            requestedChapter && requestedChapter !== data.progress?.chapterId
+              ? 0
+              : (data.progress?.pageIndex ?? 0),
+          )
+        } catch {
+          /* pagesError overlay */
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
       } finally {
@@ -258,20 +390,31 @@ export function ReaderPage() {
     return () => {
       cancelled = true
     }
-  }, [editionId, remote, loadChapter, searchParams])
+    // intentionally editionId-only: remote/loadChapter/searchParams identity churn was
+    // re-opening the session and snapping back to cover + page mode.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editionId])
 
   useEffect(() => {
     return () => {
       if (saveTimer.current) window.clearTimeout(saveTimer.current)
-      if (editionId && chapterId && isTauri() && !isRemote) {
-        void api.saveReadingProgress({
-          editionId,
-          chapterId,
+      const remoteSession = parseRemoteEdition(editionId)
+      const activeChapter = chapterIdRef.current
+      if (!editionId || !activeChapter || !isTauri()) return
+      if (remoteSession) {
+        saveRemoteProgress(remoteSession.provider, remoteSession.mangaId, {
+          chapterId: activeChapter,
           pageIndex,
-          scrollRatio: 0,
-          completed: false,
         })
+        return
       }
+      void api.saveReadingProgress({
+        editionId,
+        chapterId: activeChapter,
+        pageIndex,
+        scrollRatio: 0,
+        completed: false,
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -279,23 +422,53 @@ export function ReaderPage() {
   const goPage = useCallback(
     (delta: number) => {
       setPageIndex((current) => {
-        const next = Math.min(Math.max(current + delta, 0), Math.max(pages.length - 1, 0))
-        void persistProgress(next)
+        const last = Math.max(pages.length - 1, 0)
+        const next = Math.min(Math.max(current + delta, 0), last)
+        if (next !== current) {
+          const completed = next >= last && last > 0
+          queueMicrotask(() => {
+            void persistProgress(next, 0, completed)
+          })
+        }
         return next
       })
     },
     [pages.length, persistProgress],
   )
 
+  useEffect(() => {
+    if (mode !== 'page' || pages.length === 0) return
+    for (const offset of [-1, 0, 1, 2]) {
+      const path = pages[pageIndex + offset]
+      if (path) preloadPageImage(path)
+    }
+  }, [mode, pages, pageIndex])
+
   const goChapter = useCallback(
     async (delta: number) => {
       if (!session) return
+      const leavingId = chapterId
       const next = session.chapters[chapterIndex + delta]
       if (!next) return
-      await loadChapter(next.id, 0)
-      await persistProgress(0)
+      try {
+        if (leavingId && delta > 0) {
+          if (remote) {
+            saveRemoteProgress(remote.provider, remote.mangaId, {
+              chapterId: next.id,
+              pageIndex: 0,
+              markReadChapterId: leavingId,
+            })
+          } else if (editionId) {
+            markLocalChapterRead(editionId, leavingId)
+          }
+        }
+        await loadChapter(next.id, 0)
+        await persistProgress(0)
+      } catch {
+        /* pagesError already set */
+      }
     },
-    [session, chapterIndex, loadChapter, persistProgress],
+    [session, chapterIndex, chapterId, loadChapter, persistProgress, remote, editionId],
   )
 
   function backTarget() {
@@ -396,17 +569,35 @@ export function ReaderPage() {
     }
   }
 
-  function pageStyle(): CSSProperties {
+  function pageStyle(vertical = false): CSSProperties {
     const base: CSSProperties = {
+      display: 'block',
       transform: `scale(${zoom})`,
-      transformOrigin: 'top left',
+      transformOrigin: vertical ? 'top center' : 'center center',
     }
-    if (fit === 'width') return { ...base, width: '100%', height: 'auto' }
-    if (fit === 'height') return { ...base, height: '100%', width: 'auto' }
+    if (fit === 'width') {
+      return { ...base, width: '100%', maxWidth: '100%', height: 'auto' }
+    }
+    if (fit === 'height') {
+      if (vertical) {
+        return { ...base, width: 'auto', maxWidth: '100%', height: 'auto' }
+      }
+      return { ...base, height: '100%', maxHeight: '100%', width: 'auto' }
+    }
     if (fit === 'screen') {
-      return { ...base, maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }
+      if (vertical) {
+        return { ...base, width: '100%', maxWidth: 'min(100%, 920px)', height: 'auto' }
+      }
+      return {
+        ...base,
+        maxWidth: '100%',
+        maxHeight: '100%',
+        width: 'auto',
+        height: 'auto',
+        objectFit: 'contain',
+      }
     }
-    return { ...base, width: 'auto', height: 'auto' }
+    return { ...base, width: 'auto', height: 'auto', maxWidth: '100%' }
   }
 
   if (loading) {
@@ -445,9 +636,9 @@ export function ReaderPage() {
   const editionLabel = session.edition.label || session.edition.providerId || 'Local'
 
   return (
-    <div className="flex h-full overflow-hidden bg-[var(--fy-reader-bg)] text-[var(--fy-text)]">
-      <aside className="flex w-[280px] shrink-0 flex-col border-r border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)]">
-        <div className="border-b border-[var(--fy-border-subtle)] px-3 py-3">
+    <div className="relative h-full overflow-hidden fy-reader-ambient text-[var(--fy-text)]">
+      <aside className="fy-liquid-glass fy-reader-glass absolute bottom-3 left-3 top-3 z-20 flex w-[280px] flex-col overflow-hidden rounded-[28px]">
+        <div className="relative z-[1] border-b border-[var(--fy-border-subtle)] px-3 py-3">
           <div className="mb-2 flex items-start gap-2">
             <button
               type="button"
@@ -478,7 +669,7 @@ export function ReaderPage() {
               <ChevronLeft size={16} />
             </button>
             <select
-              className="min-w-0 flex-1 truncate rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-2 py-1.5 text-xs outline-none focus:border-[var(--fy-border)]"
+              className="min-w-0 flex-1 truncate fy-liquid-control px-2 py-1.5 text-xs outline-none focus:border-[var(--fy-border)]"
               value={chapterId ?? ''}
               disabled={pagesLoading}
               onChange={(e) => void loadChapter(e.target.value, 0)}
@@ -551,7 +742,7 @@ export function ReaderPage() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="relative z-[1] min-h-0 flex-1 overflow-y-auto">
           <SidebarSection
             label="Page Style"
             open={styleOpen}
@@ -560,7 +751,7 @@ export function ReaderPage() {
             <label className="block text-xs text-[var(--fy-text-muted)]">
               Mode
               <select
-                className="mt-1 w-full rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-2 py-1.5 text-sm text-[var(--fy-text)]"
+                className="mt-1 w-full fy-liquid-control px-2 py-1.5 text-sm text-[var(--fy-text)]"
                 value={mode}
                 onChange={(e) => setMode(e.target.value as ReadingMode)}
               >
@@ -571,7 +762,7 @@ export function ReaderPage() {
             <label className="mt-2 block text-xs text-[var(--fy-text-muted)]">
               Direction
               <select
-                className="mt-1 w-full rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-2 py-1.5 text-sm text-[var(--fy-text)]"
+                className="mt-1 w-full fy-liquid-control px-2 py-1.5 text-sm text-[var(--fy-text)]"
                 value={direction}
                 onChange={(e) => setDirection(e.target.value as ReadingDirection)}
               >
@@ -649,7 +840,7 @@ export function ReaderPage() {
           </SidebarSection>
         </div>
 
-        <div className="border-t border-[var(--fy-border-subtle)] px-3 py-3">
+        <div className="relative z-[1] border-t border-[var(--fy-border-subtle)] px-3 py-3">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="truncate text-sm font-medium">{chapterLabel}</div>
@@ -663,44 +854,72 @@ export function ReaderPage() {
         </div>
       </aside>
 
-      <main className="relative min-w-0 flex-1 bg-[var(--fy-reader-bg)]">
-        {pagesLoading ? (
+      <main className="absolute inset-0 z-0">
+        {pagesError ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="max-w-md text-sm text-[var(--fy-danger)]">{pagesError}</p>
+            <Button
+              variant="secondary"
+              disabled={!chapterId || pagesLoading}
+              onClick={() => {
+                if (!chapterId) return
+                pageCacheRef.current.delete(chapterId)
+                void loadChapter(chapterId, pageIndex).catch(() => undefined)
+              }}
+            >
+              Try again
+            </Button>
+          </div>
+        ) : pagesLoading ? (
           <div className="flex h-full items-center justify-center">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--fy-border)] border-t-[var(--fy-text)]" />
           </div>
         ) : mode === 'vertical' ? (
           <div
             ref={scrollRef}
-            className="h-full overflow-y-auto px-4 py-4"
+            className="h-full overflow-y-auto overscroll-contain px-4 py-4 pl-[304px]"
             onScroll={(e) => {
               const el = e.currentTarget
               const ratio = el.scrollTop / Math.max(el.scrollHeight - el.clientHeight, 1)
               void persistProgress(pageIndex, ratio)
             }}
           >
-            <div className="flex w-full flex-col gap-2">
+            <div className="mx-auto flex w-full max-w-[920px] flex-col items-center gap-2">
               {pages.map((page, index) => (
                 <ReaderPageImage
                   key={`${page}-${index}`}
                   path={page}
                   alt={`Page ${index + 1}`}
                   className="w-full"
-                  style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+                  style={pageStyle(true)}
+                  eager={index < 3}
                 />
               ))}
             </div>
           </div>
         ) : (
-          <div className="flex h-full items-start justify-start overflow-auto p-4">
-            {pages[pageIndex] ? (
-              <ReaderPageImage
-                path={pages[pageIndex]}
-                alt={`Page ${pageIndex + 1}`}
-                className="max-h-full max-w-full"
-                style={pageStyle()}
-              />
-            ) : (
+          <div className="relative flex h-full items-center justify-center overflow-auto p-4 pl-[304px]">
+            {pages.length === 0 ? (
               <p className="text-[var(--fy-text-muted)]">No page image</p>
+            ) : (
+              pages.map((page, index) => {
+                if (Math.abs(index - pageIndex) > 1) return null
+                const active = index === pageIndex
+                return (
+                  <ReaderPageImage
+                    key={`${page}-${index}`}
+                    path={page}
+                    alt={`Page ${index + 1}`}
+                    className={cn(
+                      'max-h-full max-w-full',
+                      active ? 'relative' : 'pointer-events-none absolute opacity-0',
+                    )}
+                    style={pageStyle(false)}
+                    eager
+                    priority={active}
+                  />
+                )
+              })
             )}
           </div>
         )}
@@ -709,26 +928,88 @@ export function ReaderPage() {
   )
 }
 
+const pageUrlCache = new Map<string, string>()
+const pagePreloadSet = new Set<string>()
+
+function pageSrcSync(path: string): string | undefined {
+  const cached = pageUrlCache.get(path)
+  if (cached) return cached
+  const proxied = toFyodorCdnUrl(path)
+  if (proxied) {
+    pageUrlCache.set(path, proxied)
+    return proxied
+  }
+  if (
+    path.startsWith('http') ||
+    path.startsWith('data:') ||
+    path.startsWith('blob:') ||
+    path.startsWith('asset:') ||
+    path.startsWith('https://asset.localhost') ||
+    path.startsWith('http://asset.localhost') ||
+    path.startsWith('http://fyodor-cdn.localhost') ||
+    path.startsWith('https://fyodor-cdn.localhost')
+  ) {
+    pageUrlCache.set(path, path)
+    return path
+  }
+  const asset = toAssetUrl(path)
+  if (asset) {
+    pageUrlCache.set(path, asset)
+    return asset
+  }
+  return undefined
+}
+
+function resolvePageSrc(path: string): Promise<string> {
+  const sync = pageSrcSync(path)
+  if (sync) return Promise.resolve(sync)
+  return resolveRemoteImageUrl(path).then((url) => {
+    const resolved = url ?? toAssetUrl(path) ?? path
+    pageUrlCache.set(path, resolved)
+    return resolved
+  })
+}
+
+function preloadPageImage(path: string) {
+  if (pagePreloadSet.has(path)) return
+  pagePreloadSet.add(path)
+  void resolvePageSrc(path).then((url) => {
+    const img = new Image()
+    img.decoding = 'async'
+    img.src = url
+  })
+}
+
 function ReaderPageImage({
   path,
   alt,
   className,
   style,
+  eager = false,
+  priority = false,
 }: {
   path: string
   alt: string
   className?: string
   style?: CSSProperties
+  eager?: boolean
+  priority?: boolean
 }) {
   const [failed, setFailed] = useState(false)
-  const [src, setSrc] = useState<string | undefined>(() => undefined)
+  const [src, setSrc] = useState<string | undefined>(() => pageSrcSync(path))
 
   useEffect(() => {
     let cancelled = false
     setFailed(false)
-    setSrc(undefined)
-    void resolveRemoteImageUrl(path).then((url) => {
-      if (!cancelled) setSrc(url ?? toAssetUrl(path))
+    const sync = pageSrcSync(path)
+    if (sync) {
+      setSrc(sync)
+      return () => {
+        cancelled = true
+      }
+    }
+    void resolvePageSrc(path).then((url) => {
+      if (!cancelled) setSrc(url)
     })
     return () => {
       cancelled = true
@@ -767,8 +1048,9 @@ function ReaderPageImage({
       alt={alt}
       className={className}
       style={style}
-      loading="lazy"
-      decoding="async"
+      loading={eager ? 'eager' : 'lazy'}
+      decoding={priority ? 'sync' : 'async'}
+      fetchPriority={priority ? 'high' : eager ? 'auto' : 'low'}
       draggable={false}
       onError={() => setFailed(true)}
     />

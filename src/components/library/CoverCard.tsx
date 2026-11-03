@@ -36,9 +36,9 @@ export function CoverCard({ item, view = 'grid' }: CoverCardProps) {
     return (
       <Link
         to={href}
-        className="flex items-center gap-4 rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] px-3 py-2 transition-colors hover:border-[var(--fy-accent)]"
+        className="fy-liquid-tile flex items-center gap-3 rounded-md px-2.5 py-1.5 transition-colors hover:border-[var(--fy-accent)]"
       >
-        <div className="h-16 w-12 overflow-hidden rounded-sm bg-[var(--fy-bg)]">
+        <div className="h-14 w-10 overflow-hidden rounded-sm bg-[var(--fy-bg)]">
           <RemoteCover
             path={item.title.coverPath}
             placeholder={item.title.primaryTitle}
@@ -46,8 +46,10 @@ export function CoverCard({ item, view = 'grid' }: CoverCardProps) {
           />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-display text-xl">{item.title.primaryTitle}</div>
-          <div className="mt-1 flex flex-wrap gap-3 font-mono text-[11px] text-[var(--fy-text-muted)]">
+          <div className="truncate font-display text-base leading-tight">
+            {item.title.primaryTitle}
+          </div>
+          <div className="mt-0.5 flex flex-wrap gap-2 font-mono text-[10px] text-[var(--fy-text-muted)]">
             <span>{item.entry.status.replace('_', ' ')}</span>
             <span>
               {item.currentChapterTitle ?? 'Unread'} · {item.chapterCount} ch
@@ -62,7 +64,7 @@ export function CoverCard({ item, view = 'grid' }: CoverCardProps) {
   return (
     <Link
       to={href}
-      className="group block overflow-hidden rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] transition-colors hover:border-[var(--fy-accent)]"
+      className="fy-liquid-tile group block overflow-hidden rounded-sm transition-colors hover:border-[var(--fy-accent)]"
     >
       <div className="relative aspect-[2/3] overflow-hidden bg-[var(--fy-bg)]">
         <RemoteCover
@@ -77,11 +79,11 @@ export function CoverCard({ item, view = 'grid' }: CoverCardProps) {
           />
         </div>
       </div>
-      <div className="space-y-1 px-3 py-3">
-        <div className="line-clamp-2 font-display text-lg leading-tight">
+      <div className="space-y-0.5 px-2 py-2">
+        <div className="line-clamp-2 font-display text-sm leading-snug">
           {item.title.primaryTitle}
         </div>
-        <div className="flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
+        <div className="flex items-center justify-between gap-2 font-mono text-[9px] uppercase tracking-wide text-[var(--fy-text-muted)]">
           <span>{item.entry.status.replace('_', ' ')}</span>
           <span className={cn(item.entry.isLocal && 'text-[var(--fy-accent)]')}>
             {item.entry.isLocal ? 'Local' : 'Remote'}

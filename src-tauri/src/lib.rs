@@ -8,7 +8,9 @@ mod state;
 
 use tauri::Manager;
 
-use commands::{atsu, import, library, mangadex, organization, reader, settings, system};
+use commands::{
+    atsu, import, kotatsu, library, mangadex, organization, reader, settings, system, updates,
+};
 use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -67,7 +69,16 @@ pub fn run() {
             atsu::atsu_chapter_pages,
             atsu::atsu_cover_data_url,
             atsu::atsu_image_data_url,
+            kotatsu::kotatsu_health,
+            kotatsu::kotatsu_list_sources,
+            kotatsu::kotatsu_search,
+            kotatsu::kotatsu_search_many,
+            kotatsu::kotatsu_title_details,
+            kotatsu::kotatsu_chapters,
+            kotatsu::kotatsu_chapter_pages,
+            kotatsu::kotatsu_bridge_status,
             system::open_external_url,
+            updates::check_for_updates,
             reader::get_chapter_pages,
             reader::get_reading_progress,
             reader::save_reading_progress,

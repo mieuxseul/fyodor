@@ -14,6 +14,8 @@ export function SettingsPage() {
   const [defaultDirection, setDefaultDirection] = useState('ltr')
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [updateInfo, setUpdateInfo] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isTauri()) return
@@ -56,6 +58,28 @@ export function SettingsPage() {
     }
   }
 
+  async function checkUpdates() {
+    if (!isTauri()) return
+    setUpdateBusy(true)
+    setError(null)
+    setUpdateInfo(null)
+    try {
+      const result = await api.checkForUpdates()
+      if (result.updateAvailable) {
+        setUpdateInfo(
+          `Update available: v${result.latestVersion} (you have v${result.currentVersion}).`,
+        )
+        setNotice('A newer release is on GitHub.')
+      } else {
+        setUpdateInfo(`You’re on the latest release (v${result.currentVersion}).`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -64,14 +88,14 @@ export function SettingsPage() {
       />
 
       {notice ? (
-        <p className="mb-4 rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] px-3 py-2 text-sm">
+        <p className="mb-4 fy-liquid-tile px-3 py-2 text-sm">
           {notice}
         </p>
       ) : null}
       {error ? <p className="mb-4 text-sm text-[var(--fy-danger)]">{error}</p> : null}
 
       <div className="space-y-8">
-        <section className="rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] p-4">
+        <section className="fy-liquid-tile p-4">
           <h2 className="font-display text-2xl">Appearance</h2>
           <div className="fy-divider my-3" />
           <div className="flex flex-wrap gap-2">
@@ -91,7 +115,7 @@ export function SettingsPage() {
           </div>
         </section>
 
-        <section className="rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] p-4">
+        <section className="fy-liquid-tile p-4">
           <h2 className="font-display text-2xl">Reading</h2>
           <div className="fy-divider my-3" />
           <div className="grid gap-3 sm:grid-cols-2">
@@ -128,7 +152,39 @@ export function SettingsPage() {
           </p>
         </section>
 
-        <section className="rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-panel)] p-4">
+        <section className="fy-liquid-tile p-4">
+          <h2 className="font-display text-2xl">Updates</h2>
+          <div className="fy-divider my-3" />
+          <p className="text-sm text-[var(--fy-text-muted)]">
+            Checks GitHub Releases for a newer Windows build. Installers use the NSIS target
+            (`npm run tauri:build`).
+          </p>
+          {updateInfo ? (
+            <p className="mt-3 text-sm">{updateInfo}</p>
+          ) : null}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              variant="primary"
+              disabled={!isTauri() || updateBusy}
+              onClick={() => void checkUpdates()}
+            >
+              {updateBusy ? 'Checking…' : 'Check for updates'}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!isTauri()}
+              onClick={() =>
+                void api.openExternalUrl(
+                  'https://github.com/rickshank-rickdemption/fyodor/releases',
+                )
+              }
+            >
+              Open releases
+            </Button>
+          </div>
+        </section>
+
+        <section className="fy-liquid-tile p-4">
           <h2 className="font-display text-2xl">Data & privacy</h2>
           <div className="fy-divider my-3" />
           {paths ? (

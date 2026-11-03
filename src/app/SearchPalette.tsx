@@ -70,16 +70,16 @@ export function SearchPalette({ open, onClose }: SearchPaletteProps) {
         role="dialog"
         aria-modal="true"
         aria-label="Search library"
-        className="relative z-10 w-full max-w-xl overflow-hidden rounded-xl border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] shadow-2xl"
+        className="relative z-10 w-full max-w-xl overflow-hidden fy-liquid-tile shadow-2xl"
       >
         <input
           autoFocus
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search your library…"
-          className="w-full border-b border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] px-4 py-3 outline-none"
+          className="w-full border-b border-[var(--fy-border-subtle)] bg-transparent px-4 py-3 outline-none"
         />
-        <div className="max-h-80 overflow-y-auto bg-[var(--fy-panel-solid)] p-2">
+        <div className="max-h-80 overflow-y-auto bg-transparent p-2">
           {loading ? (
             <p className="px-2 py-4 text-sm text-[var(--fy-text-muted)]">Searching…</p>
           ) : null}

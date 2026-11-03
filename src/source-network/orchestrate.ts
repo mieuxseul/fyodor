@@ -5,8 +5,12 @@ import type {
   ProviderSearchOutcome,
 } from './types'
 
-const DEFAULT_TIMEOUT_MS = 8_000
+const DEFAULT_TIMEOUT_MS = 12_000
 const DEFAULT_CONCURRENCY = 4
+const PROVIDER_TIMEOUT_MS: Record<string, number> = {
+  // Persistent JVM bridge + parallel source fan-out.
+  kotatsu: 25_000,
+}
 
 async function mapPool<T, R>(
   items: T[],
@@ -92,6 +96,7 @@ export async function searchProviders(options: {
 
   const outcomes = await mapPool(searchable, concurrency, async (provider) => {
     const started = performance.now()
+    const providerTimeoutMs = PROVIDER_TIMEOUT_MS[provider.info.id] ?? timeoutMs
     const outcome: ProviderSearchOutcome = {
       providerId: provider.info.id,
       providerName: provider.info.name,
@@ -105,8 +110,8 @@ export async function searchProviders(options: {
         throw new DOMException('Search cancelled', 'AbortError')
       }
       const results = await withTimeout(
-        provider.search(query, { signal: options.signal, timeoutMs }),
-        timeoutMs,
+        provider.search(query, { signal: options.signal, timeoutMs: providerTimeoutMs }),
+        providerTimeoutMs,
         options.signal,
       )
       outcome.ok = true

@@ -154,8 +154,55 @@ export const api = {
   atsuChapterPages(mangaId: string, chapterId: string): Promise<AtsuChapterPages> {
     return invoke('atsu_chapter_pages', { mangaId, chapterId })
   },
+  kotatsuListSources(): Promise<
+    Array<{
+      name: string
+      title: string
+      locale: string
+      contentType: string
+      broken: boolean
+      domain?: string | null
+    }>
+  > {
+    return invoke('kotatsu_list_sources')
+  },
+  kotatsuSearch(source: string, query: string, limit = 12) {
+    return invoke('kotatsu_search', { source, query, limit })
+  },
+  kotatsuTitleDetails(source: string, url: string, title?: string) {
+    return invoke<Record<string, unknown>>('kotatsu_title_details', { source, url, title })
+  },
+  kotatsuChapters(source: string, url: string, title?: string) {
+    return invoke<
+      Array<{
+        id: string
+        url: string
+        title: string
+        number?: number | null
+        scanlator?: string | null
+        branch?: string | null
+        sortIndex: number
+      }>
+    >('kotatsu_chapters', { source, url, title })
+  },
+  kotatsuChapterPages(source: string, chapterUrl: string, chapterId?: string) {
+    return invoke<{ source: string; chapterUrl: string; pages: string[] }>(
+      'kotatsu_chapter_pages',
+      { source, chapterUrl, chapterId },
+    )
+  },
   openExternalUrl(url: string): Promise<void> {
     return invoke('open_external_url', { url })
+  },
+  checkForUpdates(): Promise<{
+    currentVersion: string
+    latestVersion?: string | null
+    updateAvailable: boolean
+    releaseUrl: string
+    downloadUrl?: string | null
+    notes?: string | null
+  }> {
+    return invoke('check_for_updates')
   },
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -8,6 +8,12 @@ import {
   ensureSourceNetworkReady,
   type ProviderRegistration,
 } from '@/source-network'
+import {
+  listKotatsuSources,
+  loadEnabledKotatsuSources,
+  saveEnabledKotatsuSources,
+  type KotatsuSourceInfo,
+} from '@/source-network/providers/kotatsu'
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -31,6 +37,10 @@ export function SourcesPage() {
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [kotatsuSources, setKotatsuSources] = useState<KotatsuSourceInfo[]>([])
+  const [kotatsuEnabled, setKotatsuEnabled] = useState<Set<string>>(new Set())
+  const [kotatsuFilter, setKotatsuFilter] = useState('')
+  const [kotatsuLoading, setKotatsuLoading] = useState(false)
 
   const refresh = useCallback(async () => {
     const network = await ensureSourceNetworkReady()
@@ -38,12 +48,49 @@ export function SourcesPage() {
     setLoading(false)
   }, [])
 
+  const refreshKotatsu = useCallback(async () => {
+    setKotatsuLoading(true)
+    try {
+      const [sources, enabled] = await Promise.all([
+        listKotatsuSources(),
+        loadEnabledKotatsuSources(),
+      ])
+      setKotatsuSources(sources)
+      setKotatsuEnabled(new Set(enabled))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setKotatsuLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     void refresh().catch((err) => {
       setError(err instanceof Error ? err.message : String(err))
       setLoading(false)
     })
-  }, [refresh])
+    void refreshKotatsu()
+  }, [refresh, refreshKotatsu])
+
+  const filteredKotatsu = useMemo(() => {
+    const q = kotatsuFilter.trim().toLowerCase()
+    if (!q) return kotatsuSources
+    return kotatsuSources.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.title.toLowerCase().includes(q) ||
+        s.locale.toLowerCase().includes(q) ||
+        (s.domain ?? '').toLowerCase().includes(q),
+    )
+  }, [kotatsuSources, kotatsuFilter])
+
+  async function toggleKotatsuSource(name: string, enabled: boolean) {
+    const next = new Set(kotatsuEnabled)
+    if (enabled) next.add(name)
+    else next.delete(name)
+    setKotatsuEnabled(next)
+    await saveEnabledKotatsuSources([...next])
+  }
 
   async function toggle(id: string, enabled: boolean) {
     setBusyId(id)
@@ -117,7 +164,7 @@ export function SourcesPage() {
           {providers.map((provider) => (
             <li
               key={provider.info.id}
-              className="rounded-xl border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] p-4"
+              className="fy-liquid-tile p-4"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -204,6 +251,76 @@ export function SourcesPage() {
           ))}
         </ul>
       )}
+
+      <section className="mt-10">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Kotatsu catalog</h2>
+            <p className="mt-1 text-sm text-[var(--fy-text-muted)]">
+              {kotatsuSources.length
+                ? `${kotatsuSources.length} parsers from Kotatsu-Redo · ${kotatsuEnabled.size} enabled for Discover`
+                : 'Requires the GPL kotatsu-bridge JAR (see README).'}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input
+              value={kotatsuFilter}
+              onChange={(e) => setKotatsuFilter(e.target.value)}
+              placeholder="Filter sources…"
+              className="h-9 w-56 rounded-lg border border-[var(--fy-border-subtle)] bg-transparent px-3 text-sm"
+            />
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={kotatsuLoading}
+              onClick={() => void refreshKotatsu()}
+            >
+              Reload catalog
+            </Button>
+          </div>
+        </div>
+        {kotatsuLoading && kotatsuSources.length === 0 ? (
+          <p className="text-sm text-[var(--fy-text-muted)]">Loading Kotatsu sources…</p>
+        ) : filteredKotatsu.length === 0 ? (
+          <EmptyState
+            title="No Kotatsu sources"
+            description="Build the bridge JAR or adjust the filter."
+          />
+        ) : (
+          <ul className="max-h-[28rem] space-y-2 overflow-y-auto rounded-xl border border-[var(--fy-border-subtle)] p-2">
+            {filteredKotatsu.map((source) => {
+              const on = kotatsuEnabled.has(source.name)
+              return (
+                <li
+                  key={source.name}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 hover:bg-[var(--fy-nav-active)]"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">
+                      {source.title}
+                      {source.broken ? (
+                        <span className="ml-2 text-xs text-[var(--fy-danger)]">broken</span>
+                      ) : null}
+                    </div>
+                    <div className="truncate font-mono text-[11px] text-[var(--fy-text-muted)]">
+                      {source.name}
+                      {source.domain ? ` · ${source.domain}` : ''}
+                      {source.locale ? ` · ${source.locale}` : ''}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={on ? 'secondary' : 'primary'}
+                    onClick={() => void toggleKotatsuSource(source.name, !on)}
+                  >
+                    {on ? 'Disable' : 'Enable'}
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   )
 }

@@ -4,7 +4,7 @@ export function DiscoverGridSkeleton({ count = 12 }: { count?: number }) {
       {Array.from({ length: count }).map((_, index) => (
         <div
           key={index}
-          className="overflow-hidden rounded-lg border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)]"
+          className="overflow-hidden fy-liquid-tile"
         >
           <div className="aspect-[2/3] animate-pulse bg-[var(--fy-bg)]" />
           <div className="space-y-2 px-2.5 py-2.5">

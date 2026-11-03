@@ -16,7 +16,7 @@ export function DiscoverCoverCard({ group, onOpen }: DiscoverCoverCardProps) {
       type="button"
       onClick={() => onOpen(group)}
       className={cn(
-        'group flex h-full flex-col overflow-hidden rounded-lg border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] text-left transition',
+        'group flex h-full flex-col overflow-hidden fy-liquid-tile text-left transition',
         'hover:-translate-y-0.5 hover:border-[var(--fy-border)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.12)]',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--fy-accent)]',
       )}

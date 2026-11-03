@@ -2,6 +2,7 @@ import { ChevronLeft } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { ChapterReadControls } from '@/components/ChapterReadControls'
 import { RemoteCover } from '@/components/RemoteCover'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -12,10 +13,19 @@ import {
   type RemoteLibraryRef,
   type RemoteTitleDetails,
 } from '@/lib/api'
+import { cn } from '@/lib/cn'
+import {
+  loadRemoteProgress,
+  markChapterRead,
+  markChapterUnread,
+  markPreviousRead,
+  type RemoteProgressSnapshot,
+} from '@/lib/remote-progress'
+import { decodeKotatsuTitleId } from '@/source-network/providers/kotatsu'
 
 const PAGE_SIZE = 40
 const SYNOPSIS_PREVIEW = 280
-const SUPPORTED = new Set(['atsu', 'mangadex'])
+const SUPPORTED = new Set(['atsu', 'mangadex', 'kotatsu'])
 
 function cleanSynopsis(raw: string | null | undefined): string {
   return (raw ?? '')
@@ -39,6 +49,18 @@ export function RemoteTitlePage() {
   const [chapterSort, setChapterSort] = useState<'asc' | 'desc'>('desc')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const [synopsisOpen, setSynopsisOpen] = useState(false)
+  const [progress, setProgress] = useState<RemoteProgressSnapshot | null>(null)
+
+  useEffect(() => {
+    if (!SUPPORTED.has(providerId) || !titleId) {
+      setProgress(null)
+      return
+    }
+    const refresh = () => setProgress(loadRemoteProgress(providerId, titleId))
+    refresh()
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [providerId, titleId])
 
   useEffect(() => {
     if (!SUPPORTED.has(providerId) || !titleId || !isTauri()) {
@@ -66,7 +88,7 @@ export function RemoteTitlePage() {
           setDetails(bundle.details)
           setChapters(bundle.chapters)
           setLibraryRef(remoteRef)
-        } else {
+        } else if (providerId === 'mangadex') {
           const [detail, chapterList, remoteRef] = await Promise.all([
             api.mangadexTitleDetails(titleId),
             api.mangadexChapters(titleId),
@@ -75,6 +97,50 @@ export function RemoteTitlePage() {
           if (cancelled) return
           setDetails(detail)
           setChapters(chapterList)
+          setLibraryRef(remoteRef)
+        } else {
+          const decoded = decodeKotatsuTitleId(titleId)
+          if (!decoded) throw new Error('Invalid Kotatsu title id')
+          const [raw, chapterList, remoteRef] = await Promise.all([
+            api.kotatsuTitleDetails(decoded.source, decoded.url),
+            api.kotatsuChapters(decoded.source, decoded.url),
+            remoteRefPromise,
+          ])
+          if (cancelled) return
+          const detail: RemoteTitleDetails = {
+            id: titleId,
+            title: String(raw.title ?? 'Untitled'),
+            alternateTitles: Array.isArray(raw.altTitles)
+              ? (raw.altTitles as string[])
+              : [],
+            description: (raw.description as string | null | undefined) ?? null,
+            coverUrl: (raw.coverUrl as string | null | undefined) ?? null,
+            contentType: 'manga',
+            publicationStatus: (raw.state as string | null | undefined) ?? null,
+            genres: Array.isArray(raw.genres) ? (raw.genres as string[]) : [],
+            tags: [],
+            author: Array.isArray(raw.authors)
+              ? ((raw.authors as string[])[0] ?? null)
+              : null,
+            artist: null,
+            websiteUrl: String(raw.publicUrl ?? ''),
+            isAdult: Boolean(raw.isAdult),
+            chapterCount: Number(raw.chapterCount ?? chapterList.length),
+            providerId: 'kotatsu',
+            providerName: `Kotatsu · ${decoded.source}`,
+          }
+          setDetails(detail)
+          setChapters(
+            chapterList.map((ch) => ({
+              id: ch.url,
+              mangaId: titleId,
+              title: ch.title,
+              number: ch.number ?? null,
+              pageCount: 0,
+              scanlator: ch.scanlator ?? null,
+              sortIndex: ch.sortIndex,
+            })),
+          )
           setLibraryRef(remoteRef)
         }
         if (cancelled) return
@@ -221,7 +287,13 @@ export function RemoteTitlePage() {
     )
   }
 
-  const startChapter = firstChapter ?? chapters[0] ?? null
+  const continueChapter =
+    (progress?.chapterId
+      ? chapters.find((chapter) => chapter.id === progress.chapterId)
+      : null) ?? null
+  const startChapter = continueChapter ?? firstChapter ?? chapters[0] ?? null
+  const hasProgress = Boolean(progress?.chapterId)
+  const readChapterIds = new Set(progress?.readChapterIds ?? [])
   const metaBits = [
     details.providerName,
     details.contentType,
@@ -280,7 +352,7 @@ export function RemoteTitlePage() {
               disabled={!startChapter}
               onClick={() => startChapter && openChapter(startChapter)}
             >
-              Start reading
+              {hasProgress ? 'Continue reading' : 'Start reading'}
             </Button>
             <Button
               variant="outline"
@@ -352,22 +424,51 @@ export function RemoteTitlePage() {
           />
         ) : (
           <>
-            <ul className="divide-y divide-[var(--fy-border-subtle)]">
-              {visibleChapters.map((chapter) => (
-                <li key={chapter.id}>
-                  <button
-                    type="button"
-                    className="flex w-full items-baseline justify-between gap-4 py-3 text-left transition hover:text-[var(--fy-text)]"
-                    onClick={() => openChapter(chapter)}
-                  >
-                    <span className="min-w-0 truncate text-sm">{chapter.title}</span>
-                    <span className="shrink-0 font-mono text-[11px] text-[var(--fy-text-muted)]">
-                      {chapter.scanlator ? `${chapter.scanlator} · ` : ''}
-                      {chapter.pageCount}p
-                    </span>
-                  </button>
-                </li>
-              ))}
+            <ul className="divide-y divide-[color-mix(in_srgb,var(--fy-text-muted)_28%,transparent)]">
+              {visibleChapters.map((chapter) => {
+                const isCurrent = chapter.id === progress?.chapterId
+                const isRead = readChapterIds.has(chapter.id)
+                return (
+                  <li key={chapter.id} className="flex items-center gap-1 py-1.5">
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex min-w-0 flex-1 items-baseline justify-between gap-3 py-1.5 text-left transition',
+                        isRead
+                          ? 'text-[var(--fy-text-muted)] hover:text-[var(--fy-text)]'
+                          : 'text-[var(--fy-text)] hover:opacity-80',
+                      )}
+                      onClick={() => openChapter(chapter)}
+                    >
+                      <span className="flex min-w-0 items-center gap-2 truncate text-sm">
+                        <span className="truncate">{chapter.title}</span>
+                        {isCurrent ? (
+                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
+                            Current
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] text-[var(--fy-text-muted)]">
+                        {chapter.scanlator ? `${chapter.scanlator} · ` : ''}
+                        {chapter.pageCount}p
+                      </span>
+                    </button>
+                    <ChapterReadControls
+                      isRead={isRead}
+                      onToggleRead={() => {
+                        const next = isRead
+                          ? markChapterUnread(providerId, titleId, chapter.id)
+                          : markChapterRead(providerId, titleId, chapter.id)
+                        setProgress(next)
+                      }}
+                      onMarkPrevious={() => {
+                        const next = markPreviousRead(providerId, titleId, chapter.id, chapters)
+                        setProgress(next)
+                      }}
+                    />
+                  </li>
+                )
+              })}
             </ul>
             {visibleCount < filteredChapters.length ? (
               <div className="mt-4">
