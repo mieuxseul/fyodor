@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="branding/fyodor-readme-logo.png" alt="Fyodor" width="320" />
+<img src="branding/fyodor-wordmark.png" alt="Fyodor" width="280" />
 
 ---
 
