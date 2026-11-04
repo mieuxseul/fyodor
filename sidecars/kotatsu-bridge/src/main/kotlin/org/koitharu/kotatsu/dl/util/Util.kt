@@ -11,6 +11,13 @@ import java.net.HttpURLConnection
 
 const val GENERIC_ERROR_MSG = "An error has occurred"
 
+// Kotlin stdlib only ships List.component1..component5; cookie Netscape rows need 6/7.
+@Suppress("NOTHING_TO_INLINE")
+inline operator fun <T> List<T>.component6(): T = get(5)
+
+@Suppress("NOTHING_TO_INLINE")
+inline operator fun <T> List<T>.component7(): T = get(6)
+
 inline fun String?.ifNullOrEmpty(fallback: () -> String): String = if (isNullOrEmpty()) fallback() else this
 
 fun getFileExtensionFromUrl(url: String): String? {

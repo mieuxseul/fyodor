@@ -54,7 +54,12 @@ jobs:
         working-directory: sidecars/kotatsu-bridge
         shell: pwsh
         run: |
-          .\gradlew.bat shadowJar --no-daemon
+          .\gradlew.bat shadowJar --no-daemon --stacktrace --info 2>&1 | Tee-Object -FilePath bridge-build.log
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "==== Kotlin/Gradle errors ===="
+            Select-String -Path bridge-build.log -Pattern 'e: |error:|Conflicting|FAILED|What went wrong' | ForEach-Object { $_.Line }
+            exit $LASTEXITCODE
+          }
           New-Item -ItemType Directory -Force -Path ..\..\src-tauri\resources | Out-Null
           Copy-Item .\build\libs\kotatsu-bridge.jar ..\..\src-tauri\resources\kotatsu-bridge.jar -Force
 
