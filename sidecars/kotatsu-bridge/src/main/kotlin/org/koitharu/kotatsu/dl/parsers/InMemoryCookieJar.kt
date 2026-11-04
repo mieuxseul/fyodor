@@ -3,8 +3,6 @@ package org.koitharu.kotatsu.dl.parsers
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
-import org.koitharu.kotatsu.dl.util.component6
-import org.koitharu.kotatsu.dl.util.component7
 import org.koitharu.kotatsu.parsers.util.insertCookie
 import java.io.InputStream
 import java.util.*

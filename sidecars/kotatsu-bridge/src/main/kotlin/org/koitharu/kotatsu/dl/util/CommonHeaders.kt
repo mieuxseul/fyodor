@@ -19,9 +19,3 @@ object CommonHeaders {
 	val CACHE_CONTROL_NO_STORE: CacheControl
 		get() = CacheControl.Builder().noStore().build()
 }
-
-@Suppress("NOTHING_TO_INLINE")
-inline operator fun <T> List<T>.component6(): T = get(5)
-
-@Suppress("NOTHING_TO_INLINE")
-inline operator fun <T> List<T>.component7(): T = get(6)
