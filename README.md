@@ -2,8 +2,6 @@
 
 <img src="branding/fyodor-wordmark.png" alt="Fyodor" width="280" />
 
----
-
 ## Desktop manga reader
 
 Discover and read manga, manhwa, comics, and local archives — easier than ever on Windows.
@@ -27,8 +25,6 @@ Discover and read manga, manhwa, comics, and local archives — easier than ever
 
 *Requires Windows 10+ with WebView2. Prefer the NSIS setup (`Fyodor_*_x64-setup.exe`) for in-app updates.*
 
----
-
 ## Features
 
 Local library first — import CBZ, ZIP, and image folders
@@ -45,8 +41,6 @@ Soft glass UI with compact library controls
 
 <br />
 
----
-
 ## Contributing
 
 [Contributing guide](CONTRIBUTING.md)
@@ -56,8 +50,6 @@ Soft glass UI with compact library controls
 Pull requests are welcome. Keep them focused and easy to review — check out [CONTRIBUTING.md](CONTRIBUTING.md) before opening one.
 
 Before filing a bug, skim existing issues and the latest [release notes](https://github.com/mieuxseul/fyodor/releases).
-
----
 
 ### Disclaimer
 
