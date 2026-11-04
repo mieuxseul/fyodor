@@ -125,11 +125,11 @@ export function AppSidebar() {
       <SidebarFooter>
         <div className="rounded-md px-2 py-2 text-[11px] text-sidebar-foreground/60 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <div className="font-mono tracking-tight group-data-[collapsible=icon]:hidden">
-            Fyodor v0.3.1
+            Fyodor v0.3.2
           </div>
           <span
             className="hidden font-brand text-sm leading-none group-data-[collapsible=icon]:inline"
-            title="Fyodor v0.3.1"
+            title="Fyodor v0.3.2"
           >
             F
           </span>
