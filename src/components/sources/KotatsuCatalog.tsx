@@ -36,7 +36,7 @@ export function KotatsuCatalog() {
 
   const refresh = useCallback(async () => {
     if (!isTauri()) {
-      setError('Desktop runtime required for the Kotatsu catalog.')
+      setError('Desktop runtime required for Other sources.')
       setLoading(false)
       return
     }
@@ -110,11 +110,11 @@ export function KotatsuCatalog() {
     <section className="mt-8 rounded-xl border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-solid)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold tracking-tight">Kotatsu catalog</h2>
+          <h2 className="text-base font-semibold tracking-tight">Other sources</h2>
           <p className="mt-1 text-sm text-[var(--fy-text-muted)]">
             {sources.length
-              ? `${sources.length} parsers from Kotatsu-Redo (GPL sidecar). Discover searches only enabled sources (${enabled.size} on).`
-              : 'Load the Kotatsu-Redo parser list via the local bridge jar.'}
+              ? `${sources.length} catalog parsers. Discover searches only enabled sources (${enabled.size} on).`
+              : 'Load the parser list via the local bridge jar.'}
           </p>
         </div>
         <Button variant="secondary" disabled={loading || saving} onClick={() => void refresh()}>

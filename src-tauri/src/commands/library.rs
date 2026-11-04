@@ -35,9 +35,50 @@ pub fn get_title_details(state: State<'_, AppState>, title_id: String) -> AppRes
     state.with_db(|conn| repos::title_details(conn, &title_id))
 }
 
+/// Bump last-opened so Library “recent” sort and Continue reading follow the last viewed title.
+#[tauri::command]
+pub fn mark_title_opened(state: State<'_, AppState>, title_id: String) -> AppResult<()> {
+    state.with_db(|conn| {
+        if repos::get_library_entry(conn, &title_id)?.is_none() {
+            return Ok(());
+        }
+        repos::touch_library_opened(conn, &title_id, &chrono::Utc::now().to_rfc3339())
+    })
+}
+
 #[tauri::command]
 pub fn update_title(state: State<'_, AppState>, input: UpdateTitleInput) -> AppResult<()> {
     state.with_db(|conn| repos::update_title_fields(conn, &input))
+}
+
+/// Copy a local image into the covers directory and set it as the title cover.
+#[tauri::command]
+pub fn set_title_cover_from_path(
+    state: State<'_, AppState>,
+    title_id: String,
+    source_path: String,
+) -> AppResult<String> {
+    let src = PathBuf::from(&source_path);
+    if !src.is_file() {
+        return Err(AppError::Message("Cover file not found".into()));
+    }
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("jpg")
+        .to_lowercase();
+    let allowed = ["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp"];
+    if !allowed.iter().any(|a| *a == ext) {
+        return Err(AppError::Message(
+            "Cover must be an image (jpg, png, webp, …)".into(),
+        ));
+    }
+    fs::create_dir_all(&state.covers_dir)?;
+    let dest = state.covers_dir.join(format!("{title_id}.{ext}"));
+    fs::copy(&src, &dest)?;
+    let path = dest.to_string_lossy().to_string();
+    state.with_db(|conn| repos::set_title_cover_path(conn, &title_id, &path))?;
+    Ok(path)
 }
 
 #[tauri::command]

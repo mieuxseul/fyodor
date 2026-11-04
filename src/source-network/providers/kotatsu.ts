@@ -105,10 +105,10 @@ export function createKotatsuProvider(): MangaProvider {
   return {
     info: {
       id: 'kotatsu',
-      name: 'Kotatsu sources',
+      name: 'Other sources',
       version: '0.1.0',
       description:
-        'Kotatsu-Redo parsers (~1385 sources) via GPL sidecar. Enable individual sources under Sources. Not affiliated with the sites.',
+        'Extra catalog parsers (~1385 sources) via local bridge. Enable individual sources under Sources → Other sources.',
       isMock: false,
       websiteUrl: 'https://github.com/Kotatsu-Redo/kotatsu-parsers-redo',
       capabilities: {

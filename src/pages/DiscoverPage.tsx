@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { DiscoverCoverCard } from '@/components/discover/DiscoverCoverCard'
@@ -6,7 +6,11 @@ import { DiscoverGridSkeleton } from '@/components/discover/DiscoverGridSkeleton
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useDisplayPrefs } from '@/hooks/useDisplayPrefs'
+import { recordKnownChapterCount } from '@/lib/chapter-seen'
+import { cn } from '@/lib/cn'
 import { loadDiscoverState, saveDiscoverState } from '@/lib/discover-state'
+import { gridColsClass } from '@/lib/library-display'
 import {
   ensureSourceNetworkReady,
   searchProviders,
@@ -16,6 +20,7 @@ import {
 
 export function DiscoverPage() {
   const navigate = useNavigate()
+  const display = useDisplayPrefs()
   const restored = useRef(loadDiscoverState())
   const [query, setQuery] = useState(restored.current?.query ?? '')
   const [report, setReport] = useState<DiscoverySearchReport | null>(
@@ -29,6 +34,9 @@ export function DiscoverPage() {
   const [status, setStatus] = useState(restored.current?.status ?? 'all')
   const [sort, setSort] = useState(restored.current?.sort ?? 'title')
   const abortRef = useRef<AbortController | null>(null)
+  const skipLiveOnceRef = useRef(
+    Boolean(restored.current?.query?.trim() && restored.current?.report),
+  )
 
   useEffect(() => {
     void (async () => {
@@ -43,7 +51,26 @@ export function DiscoverPage() {
     saveDiscoverState({ query, contentType, status, sort, report })
   }, [query, contentType, status, sort, report])
 
-  async function runSearch(nextQuery = query) {
+  useEffect(() => {
+    if (!report) return
+    for (const group of report.groups) {
+      for (const edition of group.editions) {
+        if (edition.providerId === 'local-library') continue
+        if (typeof edition.chapterCount === 'number' && edition.chapterCount > 0) {
+          recordKnownChapterCount(
+            edition.providerId,
+            edition.providerTitleId,
+            edition.chapterCount,
+          )
+        }
+      }
+    }
+  }, [report])
+
+  const runSearch = useCallback(async (nextQuery: string) => {
+    const trimmed = nextQuery.trim()
+    if (!trimmed) return
+
     const network = await ensureSourceNetworkReady()
     const providers = network.getEnabledProviders()
     setEnabledCount(providers.length)
@@ -56,7 +83,7 @@ export function DiscoverPage() {
     setSearching(true)
     try {
       const result = await searchProviders({
-        query: nextQuery,
+        query: trimmed,
         providers,
         signal: controller.signal,
       })
@@ -68,12 +95,31 @@ export function DiscoverPage() {
         setSearching(false)
       }
     }
-  }
+  }, [])
 
   function cancelSearch() {
     abortRef.current?.abort()
     setSearching(false)
   }
+
+  // Live results while typing — no Enter required.
+  useEffect(() => {
+    if (!ready) return
+    const trimmed = query.trim()
+    if (!trimmed) {
+      abortRef.current?.abort()
+      setSearching(false)
+      return
+    }
+    if (skipLiveOnceRef.current) {
+      skipLiveOnceRef.current = false
+      return
+    }
+    const handle = window.setTimeout(() => {
+      void runSearch(trimmed)
+    }, 380)
+    return () => window.clearTimeout(handle)
+  }, [query, ready, runSearch])
 
   function openGroup(group: GroupedSearchResult) {
     setActionError(null)
@@ -141,6 +187,7 @@ export function DiscoverPage() {
       <PageHeader
         title="Discover"
         subtitle="Browse covers from enabled providers. Click a title for full details and chapters."
+        showSearch={false}
         actions={
           <Button variant="secondary" onClick={() => navigate('/sources')}>
             Manage sources
@@ -152,13 +199,14 @@ export function DiscoverPage() {
         className="mb-2.5 flex flex-wrap gap-1.5"
         onSubmit={(event) => {
           event.preventDefault()
-          void runSearch()
+          skipLiveOnceRef.current = false
+          void runSearch(query)
         }}
       >
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search titles across enabled sources…"
+          placeholder="Type to search titles across enabled sources…"
           className="min-w-[200px] flex-1 fy-liquid-tile px-2.5 py-1.5 text-sm outline-none focus:border-[var(--fy-border)]"
         />
         <Button type="submit" variant="primary" size="sm" disabled={!ready || searching || !query.trim()}>
@@ -229,7 +277,7 @@ export function DiscoverPage() {
       ) : !report ? (
         <EmptyState
           title="Ready to discover"
-          description={`${enabledCount} provider${enabledCount === 1 ? '' : 's'} enabled. Search to load real covers and titles from your sources.`}
+          description={`${enabledCount} provider${enabledCount === 1 ? '' : 's'} enabled. Start typing — results appear as you search.`}
         />
       ) : !hasResults ? (
         <EmptyState
@@ -266,11 +314,35 @@ export function DiscoverPage() {
               : ''}
           </p>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-            {filteredGroups.map((group) => (
-              <DiscoverCoverCard key={group.groupId} group={group} onOpen={openGroup} />
-            ))}
-          </div>
+          {display.mode === 'details' ? (
+            <div className="space-y-1.5">
+              {filteredGroups.map((group) => (
+                <DiscoverCoverCard
+                  key={group.groupId}
+                  group={group}
+                  view="details"
+                  onOpen={openGroup}
+                  onLibraryError={(message) => {
+                    setActionError(message)
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className={cn('grid gap-3', gridColsClass(display.gridSize))}>
+              {filteredGroups.map((group) => (
+                <DiscoverCoverCard
+                  key={group.groupId}
+                  group={group}
+                  view={display.mode === 'compact' ? 'compact' : 'grid'}
+                  onOpen={openGroup}
+                  onLibraryError={(message) => {
+                    setActionError(message)
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
           <p className="text-xs text-[var(--fy-text-muted)]">
             MangaDex results credit MangaDex. Atsumaru uses unofficial atsu.moe site JSON with

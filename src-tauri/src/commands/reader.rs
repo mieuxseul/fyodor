@@ -69,8 +69,11 @@ pub fn save_reading_progress(
         };
         repos::upsert_progress(conn, &progress)?;
 
-        if let Some(edition) = repos::get_edition(conn, &input.edition_id)? {
-            repos::touch_library_opened(conn, &edition.title_id, &progress.updated_at)?;
+        let suppress = input.suppress_activity.unwrap_or(false);
+        if !suppress {
+            if let Some(edition) = repos::get_edition(conn, &input.edition_id)? {
+                repos::touch_library_opened(conn, &edition.title_id, &progress.updated_at)?;
+            }
         }
 
         Ok(progress)
@@ -81,6 +84,7 @@ pub fn save_reading_progress(
 pub fn open_edition_for_reading(
     state: State<'_, AppState>,
     edition_id: String,
+    incognito: Option<bool>,
 ) -> AppResult<serde_json::Value> {
     state.with_db(|conn| {
         let edition = repos::get_edition(conn, &edition_id)?
@@ -90,16 +94,18 @@ pub fn open_edition_for_reading(
         let chapters = repos::list_chapters(conn, &edition_id)?;
         let progress = repos::get_progress(conn, &edition_id)?;
 
-        let opened_at = now();
-        repos::touch_library_opened(conn, &title.id, &opened_at)?;
-        repos::insert_history(
-            conn,
-            &Uuid::new_v4().to_string(),
-            &title.id,
-            &edition_id,
-            progress.as_ref().and_then(|p| p.chapter_id.as_deref()),
-            &opened_at,
-        )?;
+        if !incognito.unwrap_or(false) {
+            let opened_at = now();
+            repos::touch_library_opened(conn, &title.id, &opened_at)?;
+            repos::insert_history(
+                conn,
+                &Uuid::new_v4().to_string(),
+                &title.id,
+                &edition_id,
+                progress.as_ref().and_then(|p| p.chapter_id.as_deref()),
+                &opened_at,
+            )?;
+        }
 
         Ok(serde_json::json!({
             "title": title,

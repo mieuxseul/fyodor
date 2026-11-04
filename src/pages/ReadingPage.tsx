@@ -5,13 +5,17 @@ import { CoverCard } from '@/components/library/CoverCard'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useDisplayPrefs } from '@/hooks/useDisplayPrefs'
 import { api, isTauri } from '@/lib/api'
+import { cn } from '@/lib/cn'
+import { gridColsClass } from '@/lib/library-display'
 import type { LibraryItem } from '@/lib/types'
 
 export function ReadingPage() {
   const [items, setItems] = useState<LibraryItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
+  const display = useDisplayPrefs()
 
   useEffect(() => {
     if (!isTauri()) return
@@ -43,10 +47,20 @@ export function ReadingPage() {
             </Button>
           }
         />
-      ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+      ) : display.mode === 'details' ? (
+        <div className="space-y-1.5">
           {items.map((item) => (
-            <CoverCard key={item.title.id} item={item} />
+            <CoverCard key={item.title.id} item={item} view="details" />
+          ))}
+        </div>
+      ) : (
+        <div className={cn('grid gap-3', gridColsClass(display.gridSize))}>
+          {items.map((item) => (
+            <CoverCard
+              key={item.title.id}
+              item={item}
+              view={display.mode === 'compact' ? 'compact' : 'grid'}
+            />
           ))}
         </div>
       )}

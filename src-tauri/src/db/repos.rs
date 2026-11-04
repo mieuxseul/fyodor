@@ -497,11 +497,23 @@ pub fn list_library(
                 .unwrap_or(0)
             })
             .unwrap_or(0);
-        let current_chapter_title = progress
+        let current_chapter = progress
             .as_ref()
             .and_then(|p| p.chapter_id.as_ref())
-            .and_then(|cid| get_chapter(conn, cid).ok().flatten())
-            .map(|c| c.title);
+            .and_then(|cid| get_chapter(conn, cid).ok().flatten());
+        let current_chapter_title = current_chapter.as_ref().map(|c| c.title.clone());
+        let progress_percent = if progress.as_ref().map(|p| p.completed).unwrap_or(false)
+            || entry.status == "completed"
+        {
+            100
+        } else if chapter_count <= 0 {
+            0
+        } else if let Some(ch) = current_chapter.as_ref() {
+            let idx = (ch.sort_index + 1).clamp(0, chapter_count);
+            ((idx as f64 / chapter_count as f64) * 100.0).round() as i64
+        } else {
+            0
+        };
 
         items.push(LibraryItem {
             title,
@@ -510,6 +522,7 @@ pub fn list_library(
             progress,
             chapter_count,
             current_chapter_title,
+            progress_percent,
         });
     }
 
@@ -900,6 +913,11 @@ pub fn clear_history(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
+pub fn clear_history_for_title(conn: &Connection, title_id: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM reading_history WHERE title_id = ?1", [title_id])?;
+    Ok(())
+}
+
 pub fn insert_bookmark(conn: &Connection, bookmark: &Bookmark) -> AppResult<()> {
     conn.execute(
         "INSERT INTO bookmarks (
@@ -994,4 +1012,920 @@ pub fn find_matching_bookmark(
     )
     .optional()
     .map_err(AppError::from)
+}
+
+
+pub fn insert_download_record(conn: &Connection, record: &DownloadRecord) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO download_records (
+            id, edition_id, chapter_id, status, progress, error, created_at, updated_at,
+            provider_id, provider_title_id, remote_chapter_id, title_label, chapter_title
+         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+        params![
+            record.id,
+            record.edition_id,
+            record.chapter_id,
+            record.status,
+            record.progress,
+            record.error,
+            record.created_at,
+            record.updated_at,
+            record.provider_id,
+            record.provider_title_id,
+            record.remote_chapter_id,
+            record.title_label,
+            record.chapter_title,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn update_download_record(conn: &Connection, record: &DownloadRecord) -> AppResult<()> {
+    conn.execute(
+        "UPDATE download_records SET
+            edition_id = ?2,
+            chapter_id = ?3,
+            status = ?4,
+            progress = ?5,
+            error = ?6,
+            updated_at = ?7,
+            provider_id = ?8,
+            provider_title_id = ?9,
+            remote_chapter_id = ?10,
+            title_label = ?11,
+            chapter_title = ?12
+         WHERE id = ?1",
+        params![
+            record.id,
+            record.edition_id,
+            record.chapter_id,
+            record.status,
+            record.progress,
+            record.error,
+            record.updated_at,
+            record.provider_id,
+            record.provider_title_id,
+            record.remote_chapter_id,
+            record.title_label,
+            record.chapter_title,
+        ],
+    )?;
+    Ok(())
+}
+
+fn map_download_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadRecord> {
+    Ok(DownloadRecord {
+        id: row.get(0)?,
+        edition_id: row.get(1)?,
+        chapter_id: row.get(2)?,
+        status: row.get(3)?,
+        progress: row.get(4)?,
+        error: row.get(5)?,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+        provider_id: row.get(8)?,
+        provider_title_id: row.get(9)?,
+        remote_chapter_id: row.get(10)?,
+        title_label: row.get(11)?,
+        chapter_title: row.get(12)?,
+    })
+}
+
+pub fn list_download_records(conn: &Connection, limit: i64) -> AppResult<Vec<DownloadRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, edition_id, chapter_id, status, progress, error, created_at, updated_at,
+                provider_id, provider_title_id, remote_chapter_id, title_label, chapter_title
+         FROM download_records
+         ORDER BY created_at DESC
+         LIMIT ?1",
+    )?;
+    let rows = stmt.query_map(params![limit], map_download_record)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+pub fn get_download_record(conn: &Connection, id: &str) -> AppResult<Option<DownloadRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, edition_id, chapter_id, status, progress, error, created_at, updated_at,
+                provider_id, provider_title_id, remote_chapter_id, title_label, chapter_title
+         FROM download_records WHERE id = ?1",
+    )?;
+    stmt.query_row(params![id], map_download_record)
+        .optional()
+        .map_err(AppError::from)
+}
+
+pub fn delete_download_record(conn: &Connection, id: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM download_records WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn delete_local_files_for_chapter(conn: &Connection, chapter_id: &str) -> AppResult<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT managed_path, source_path FROM local_files WHERE chapter_id = ?1",
+    )?;
+    let paths = stmt
+        .query_map(params![chapter_id], |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, String>(1)?,
+            ))
+        })?
+        .filter_map(|row| row.ok())
+        .flat_map(|(managed, source)| {
+            let mut out = Vec::new();
+            if let Some(m) = managed {
+                if !m.is_empty() {
+                    out.push(m);
+                }
+            }
+            if !source.is_empty() {
+                out.push(source);
+            }
+            out
+        })
+        .collect::<Vec<_>>();
+    conn.execute(
+        "DELETE FROM local_files WHERE chapter_id = ?1",
+        params![chapter_id],
+    )?;
+    Ok(paths)
+}
+
+pub fn delete_chapter(conn: &Connection, chapter_id: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE reading_progress
+         SET chapter_id = NULL, page_index = 0, scroll_ratio = 0.0, completed = 0
+         WHERE chapter_id = ?1",
+        params![chapter_id],
+    )?;
+    conn.execute("DELETE FROM chapters WHERE id = ?1", params![chapter_id])?;
+    Ok(())
+}
+
+pub fn count_download_local_files(conn: &Connection, edition_id: &str) -> AppResult<i64> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM local_files
+         WHERE edition_id = ?1 AND kind = 'download'",
+        params![edition_id],
+        |row| row.get(0),
+    )?;
+    Ok(count)
+}
+
+pub fn find_completed_download(
+    conn: &Connection,
+    provider_id: &str,
+    provider_title_id: &str,
+    remote_chapter_id: &str,
+) -> AppResult<Option<DownloadRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, edition_id, chapter_id, status, progress, error, created_at, updated_at,
+                provider_id, provider_title_id, remote_chapter_id, title_label, chapter_title
+         FROM download_records
+         WHERE provider_id = ?1
+           AND provider_title_id = ?2
+           AND remote_chapter_id = ?3
+           AND status = 'completed'
+         ORDER BY updated_at DESC
+         LIMIT 1",
+    )?;
+    stmt.query_row(
+        params![provider_id, provider_title_id, remote_chapter_id],
+        map_download_record,
+    )
+    .optional()
+    .map_err(AppError::from)
+}
+
+pub fn set_library_downloaded(conn: &Connection, title_id: &str, downloaded: bool) -> AppResult<()> {
+    conn.execute(
+        "UPDATE library_entries SET is_downloaded = ?2 WHERE title_id = ?1",
+        params![title_id, if downloaded { 1 } else { 0 }],
+    )?;
+    Ok(())
+}
+
+pub fn next_chapter_sort_index(conn: &Connection, edition_id: &str) -> AppResult<i64> {
+    let max: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(sort_index), -1) FROM chapters WHERE edition_id = ?1",
+            params![edition_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(-1);
+    Ok(max + 1)
+}
+
+fn now_rfc3339() -> String {
+    chrono::Utc::now().to_rfc3339()
+}
+
+fn map_social_title(row: &rusqlite::Row<'_>) -> rusqlite::Result<SocialTitle> {
+    Ok(SocialTitle {
+        id: row.get(0)?,
+        kind: row.get(1)?,
+        local_title_id: row.get(2)?,
+        provider_id: row.get(3)?,
+        provider_title_id: row.get(4)?,
+        primary_title: row.get(5)?,
+        cover_path: row.get(6)?,
+        author: row.get(7)?,
+        content_type: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
+}
+
+pub fn social_title_id_from_input(input: &SocialTitleInput) -> AppResult<String> {
+    let kind = input.kind.trim().to_lowercase();
+    match kind.as_str() {
+        "local" => {
+            let local = input
+                .local_title_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| AppError::Message("localTitleId required".into()))?;
+            Ok(format!("local:{local}"))
+        }
+        "remote" => {
+            let provider = input
+                .provider_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| AppError::Message("providerId required".into()))?;
+            let title_id = input
+                .provider_title_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| AppError::Message("providerTitleId required".into()))?;
+            Ok(format!("remote:{provider}:{title_id}"))
+        }
+        _ => Err(AppError::Message("kind must be local or remote".into())),
+    }
+}
+
+pub fn upsert_social_title(conn: &Connection, input: &SocialTitleInput) -> AppResult<SocialTitle> {
+    let id = social_title_id_from_input(input)?;
+    let now = now_rfc3339();
+    let kind = input.kind.trim().to_lowercase();
+    let content_type = input
+        .content_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("manga")
+        .to_string();
+    let primary_title = input.primary_title.trim();
+    if primary_title.is_empty() {
+        return Err(AppError::Message("primaryTitle required".into()));
+    }
+
+    conn.execute(
+        "INSERT INTO social_titles (
+            id, kind, local_title_id, provider_id, provider_title_id,
+            primary_title, cover_path, author, content_type, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
+         ON CONFLICT(id) DO UPDATE SET
+            primary_title = excluded.primary_title,
+            cover_path = COALESCE(excluded.cover_path, social_titles.cover_path),
+            author = COALESCE(excluded.author, social_titles.author),
+            content_type = excluded.content_type,
+            local_title_id = COALESCE(excluded.local_title_id, social_titles.local_title_id),
+            provider_id = COALESCE(excluded.provider_id, social_titles.provider_id),
+            provider_title_id = COALESCE(excluded.provider_title_id, social_titles.provider_title_id),
+            updated_at = excluded.updated_at",
+        params![
+            id,
+            kind,
+            input.local_title_id,
+            input.provider_id,
+            input.provider_title_id,
+            primary_title,
+            input.cover_path,
+            input.author,
+            content_type,
+            now,
+        ],
+    )?;
+
+    get_social_title(conn, &id)?.ok_or_else(|| AppError::Message("Failed to load social title".into()))
+}
+
+pub fn get_social_title(conn: &Connection, id: &str) -> AppResult<Option<SocialTitle>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, kind, local_title_id, provider_id, provider_title_id,
+                primary_title, cover_path, author, content_type, created_at, updated_at
+         FROM social_titles WHERE id = ?1",
+    )?;
+    stmt.query_row(params![id], map_social_title)
+        .optional()
+        .map_err(AppError::from)
+}
+
+pub fn get_user_profile(conn: &Connection) -> AppResult<UserProfile> {
+    ensure_user_profile_row(conn)?;
+    conn.query_row(
+        "SELECT display_name, bio, avatar_path, show_recent_activity, created_at, updated_at
+         FROM user_profile WHERE id = 1",
+        [],
+        |row| {
+            Ok(UserProfile {
+                display_name: row.get(0)?,
+                bio: row.get(1)?,
+                avatar_path: row.get(2)?,
+                show_recent_activity: row.get::<_, i64>(3)? != 0,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        },
+    )
+    .map_err(AppError::from)
+}
+
+fn ensure_user_profile_row(conn: &Connection) -> AppResult<()> {
+    let existing: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM user_profile WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if existing.is_none() {
+        let now = now_rfc3339();
+        conn.execute(
+            "INSERT INTO user_profile (id, display_name, bio, avatar_path, show_recent_activity, created_at, updated_at)
+             VALUES (1, 'Reader', NULL, NULL, 1, ?1, ?1)",
+            params![now],
+        )?;
+    }
+    Ok(())
+}
+
+pub fn update_user_profile(conn: &Connection, input: &UpdateProfileInput) -> AppResult<UserProfile> {
+    ensure_user_profile_row(conn)?;
+    let current = get_user_profile(conn)?;
+    let now = now_rfc3339();
+    let display_name = input
+        .display_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(current.display_name.as_str())
+        .to_string();
+    let bio = match &input.bio {
+        Some(v) => {
+            let t = v.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Some(t.to_string())
+            }
+        }
+        None => current.bio.clone(),
+    };
+    let avatar_path = if input.clear_avatar == Some(true) {
+        None
+    } else if let Some(path) = &input.avatar_path {
+        let t = path.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
+    } else {
+        current.avatar_path.clone()
+    };
+    let show_recent = input
+        .show_recent_activity
+        .unwrap_or(current.show_recent_activity);
+
+    conn.execute(
+        "UPDATE user_profile SET
+            display_name = ?1,
+            bio = ?2,
+            avatar_path = ?3,
+            show_recent_activity = ?4,
+            updated_at = ?5
+         WHERE id = 1",
+        params![
+            display_name,
+            bio,
+            avatar_path,
+            if show_recent { 1 } else { 0 },
+            now,
+        ],
+    )?;
+    get_user_profile(conn)
+}
+
+pub fn insert_activity_event(
+    conn: &Connection,
+    kind: &str,
+    social_title_id: Option<&str>,
+    payload: serde_json::Value,
+) -> AppResult<()> {
+    let id = Uuid::new_v4().to_string();
+    let now = now_rfc3339();
+    let payload_str = payload.to_string();
+    conn.execute(
+        "INSERT INTO activity_events (id, kind, social_title_id, payload, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, kind, social_title_id, payload_str, now],
+    )?;
+    Ok(())
+}
+
+pub fn list_profile_favorites(conn: &Connection) -> AppResult<Vec<ProfileFavorite>> {
+    let mut stmt = conn.prepare(
+        "SELECT f.slot, f.updated_at,
+                t.id, t.kind, t.local_title_id, t.provider_id, t.provider_title_id,
+                t.primary_title, t.cover_path, t.author, t.content_type, t.created_at, t.updated_at
+         FROM profile_favorites f
+         JOIN social_titles t ON t.id = f.social_title_id
+         ORDER BY f.slot ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(ProfileFavorite {
+            slot: row.get(0)?,
+            updated_at: row.get(1)?,
+            title: SocialTitle {
+                id: row.get(2)?,
+                kind: row.get(3)?,
+                local_title_id: row.get(4)?,
+                provider_id: row.get(5)?,
+                provider_title_id: row.get(6)?,
+                primary_title: row.get(7)?,
+                cover_path: row.get(8)?,
+                author: row.get(9)?,
+                content_type: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+            },
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+pub fn set_profile_favorite(
+    conn: &Connection,
+    slot: i64,
+    input: &SocialTitleInput,
+) -> AppResult<Vec<ProfileFavorite>> {
+    if !(0..=3).contains(&slot) {
+        return Err(AppError::Message("Favorite slot must be 0–3".into()));
+    }
+    let title = upsert_social_title(conn, input)?;
+    let now = now_rfc3339();
+    // Remove this title from any other slot first.
+    conn.execute(
+        "DELETE FROM profile_favorites WHERE social_title_id = ?1",
+        params![title.id],
+    )?;
+    conn.execute(
+        "INSERT INTO profile_favorites (slot, social_title_id, updated_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(slot) DO UPDATE SET
+            social_title_id = excluded.social_title_id,
+            updated_at = excluded.updated_at",
+        params![slot, title.id, now],
+    )?;
+    insert_activity_event(
+        conn,
+        "favorite",
+        Some(&title.id),
+        serde_json::json!({ "slot": slot }),
+    )?;
+    list_profile_favorites(conn)
+}
+
+pub fn clear_profile_favorite(conn: &Connection, slot: i64) -> AppResult<Vec<ProfileFavorite>> {
+    if !(0..=3).contains(&slot) {
+        return Err(AppError::Message("Favorite slot must be 0–3".into()));
+    }
+    conn.execute("DELETE FROM profile_favorites WHERE slot = ?1", params![slot])?;
+    list_profile_favorites(conn)
+}
+
+pub fn get_title_social(
+    conn: &Connection,
+    input: &SocialTitleInput,
+) -> AppResult<TitleSocialState> {
+    let title = upsert_social_title(conn, input)?;
+    let rating: Option<f64> = conn
+        .query_row(
+            "SELECT rating FROM title_ratings WHERE social_title_id = ?1",
+            params![title.id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let liked: bool = conn
+        .query_row(
+            "SELECT 1 FROM title_likes WHERE social_title_id = ?1",
+            params![title.id],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    let favorite_slot: Option<i64> = conn
+        .query_row(
+            "SELECT slot FROM profile_favorites WHERE social_title_id = ?1",
+            params![title.id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(TitleSocialState {
+        title,
+        rating,
+        liked,
+        favorite_slot,
+    })
+}
+
+pub fn set_title_rating(
+    conn: &Connection,
+    input: &SocialTitleInput,
+    rating: Option<f64>,
+) -> AppResult<TitleSocialState> {
+    let title = upsert_social_title(conn, input)?;
+    if let Some(value) = rating {
+        if !(0.5..=5.0).contains(&value) {
+            return Err(AppError::Message("Rating must be between 0.5 and 5".into()));
+        }
+        // Snap to half-stars
+        let snapped = (value * 2.0).round() / 2.0;
+        let now = now_rfc3339();
+        conn.execute(
+            "INSERT INTO title_ratings (social_title_id, rating, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(social_title_id) DO UPDATE SET
+                rating = excluded.rating,
+                updated_at = excluded.updated_at",
+            params![title.id, snapped, now],
+        )?;
+        insert_activity_event(
+            conn,
+            "rated",
+            Some(&title.id),
+            serde_json::json!({ "rating": snapped }),
+        )?;
+    } else {
+        conn.execute(
+            "DELETE FROM title_ratings WHERE social_title_id = ?1",
+            params![title.id],
+        )?;
+    }
+    get_title_social(conn, input)
+}
+
+pub fn toggle_title_like(
+    conn: &Connection,
+    input: &SocialTitleInput,
+) -> AppResult<TitleSocialState> {
+    let title = upsert_social_title(conn, input)?;
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM title_likes WHERE social_title_id = ?1",
+            params![title.id],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if exists {
+        conn.execute(
+            "DELETE FROM title_likes WHERE social_title_id = ?1",
+            params![title.id],
+        )?;
+        insert_activity_event(conn, "unliked", Some(&title.id), serde_json::json!({}))?;
+    } else {
+        let now = now_rfc3339();
+        conn.execute(
+            "INSERT INTO title_likes (social_title_id, liked_at) VALUES (?1, ?2)",
+            params![title.id, now],
+        )?;
+        insert_activity_event(conn, "liked", Some(&title.id), serde_json::json!({}))?;
+    }
+    get_title_social(conn, input)
+}
+
+pub fn list_diary(conn: &Connection, limit: i64) -> AppResult<Vec<DiaryEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT d.id, d.logged_on, d.rating, d.review, d.liked, d.created_at, d.updated_at,
+                t.id, t.kind, t.local_title_id, t.provider_id, t.provider_title_id,
+                t.primary_title, t.cover_path, t.author, t.content_type, t.created_at, t.updated_at
+         FROM diary_entries d
+         JOIN social_titles t ON t.id = d.social_title_id
+         ORDER BY d.logged_on DESC, d.created_at DESC
+         LIMIT ?1",
+    )?;
+    let rows = stmt.query_map(params![limit], |row| {
+        Ok(DiaryEntry {
+            id: row.get(0)?,
+            logged_on: row.get(1)?,
+            rating: row.get(2)?,
+            review: row.get(3)?,
+            liked: row.get::<_, i64>(4)? != 0,
+            created_at: row.get(5)?,
+            updated_at: row.get(6)?,
+            title: SocialTitle {
+                id: row.get(7)?,
+                kind: row.get(8)?,
+                local_title_id: row.get(9)?,
+                provider_id: row.get(10)?,
+                provider_title_id: row.get(11)?,
+                primary_title: row.get(12)?,
+                cover_path: row.get(13)?,
+                author: row.get(14)?,
+                content_type: row.get(15)?,
+                created_at: row.get(16)?,
+                updated_at: row.get(17)?,
+            },
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+pub fn create_diary_entry(conn: &Connection, input: &CreateDiaryInput) -> AppResult<DiaryEntry> {
+    let title = upsert_social_title(conn, &input.title)?;
+    let logged_on = input.logged_on.trim();
+    if logged_on.is_empty() {
+        return Err(AppError::Message("loggedOn required".into()));
+    }
+    let rating = match input.rating {
+        Some(v) => {
+            if !(0.5..=5.0).contains(&v) {
+                return Err(AppError::Message("Rating must be between 0.5 and 5".into()));
+            }
+            Some((v * 2.0).round() / 2.0)
+        }
+        None => None,
+    };
+    let liked = input.liked.unwrap_or(false);
+    let now = now_rfc3339();
+    let id = Uuid::new_v4().to_string();
+    let review = input
+        .review
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    conn.execute(
+        "INSERT INTO diary_entries (id, social_title_id, logged_on, rating, review, liked, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
+        params![
+            id,
+            title.id,
+            logged_on,
+            rating,
+            review,
+            if liked { 1 } else { 0 },
+            now,
+        ],
+    )?;
+
+    if let Some(r) = rating {
+        conn.execute(
+            "INSERT INTO title_ratings (social_title_id, rating, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(social_title_id) DO UPDATE SET
+                rating = excluded.rating,
+                updated_at = excluded.updated_at",
+            params![title.id, r, now],
+        )?;
+    }
+    if liked {
+        conn.execute(
+            "INSERT INTO title_likes (social_title_id, liked_at) VALUES (?1, ?2)
+             ON CONFLICT(social_title_id) DO UPDATE SET liked_at = excluded.liked_at",
+            params![title.id, now],
+        )?;
+    }
+
+    insert_activity_event(
+        conn,
+        "diary",
+        Some(&title.id),
+        serde_json::json!({
+            "entryId": id,
+            "loggedOn": logged_on,
+            "rating": rating,
+            "liked": liked,
+        }),
+    )?;
+
+    list_diary(conn, 500)?
+        .into_iter()
+        .find(|e| e.id == id)
+        .ok_or_else(|| AppError::Message("Failed to load diary entry".into()))
+}
+
+pub fn update_diary_entry(conn: &Connection, input: &UpdateDiaryInput) -> AppResult<DiaryEntry> {
+    let mut stmt = conn.prepare(
+        "SELECT id, social_title_id, logged_on, rating, review, liked, created_at, updated_at
+         FROM diary_entries WHERE id = ?1",
+    )?;
+    let (social_title_id, logged_on, rating, review, liked, created_at): (
+        String,
+        String,
+        Option<f64>,
+        Option<String>,
+        i64,
+        String,
+    ) = stmt.query_row(params![input.id], |row| {
+        Ok((
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+            row.get(4)?,
+            row.get(5)?,
+            row.get(6)?,
+        ))
+    })?;
+
+    let new_logged = input
+        .logged_on
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(logged_on.as_str())
+        .to_string();
+    let new_rating = if input.clear_rating == Some(true) {
+        None
+    } else if let Some(v) = input.rating {
+        if !(0.5..=5.0).contains(&v) {
+            return Err(AppError::Message("Rating must be between 0.5 and 5".into()));
+        }
+        Some((v * 2.0).round() / 2.0)
+    } else {
+        rating
+    };
+    let new_review = match &input.review {
+        Some(v) => {
+            let t = v.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Some(t.to_string())
+            }
+        }
+        None => review,
+    };
+    let new_liked = input.liked.map(|v| if v { 1 } else { 0 }).unwrap_or(liked);
+    let now = now_rfc3339();
+
+    conn.execute(
+        "UPDATE diary_entries SET
+            logged_on = ?2,
+            rating = ?3,
+            review = ?4,
+            liked = ?5,
+            updated_at = ?6
+         WHERE id = ?1",
+        params![
+            input.id,
+            new_logged,
+            new_rating,
+            new_review,
+            new_liked,
+            now,
+        ],
+    )?;
+
+    if let Some(r) = new_rating {
+        conn.execute(
+            "INSERT INTO title_ratings (social_title_id, rating, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(social_title_id) DO UPDATE SET
+                rating = excluded.rating,
+                updated_at = excluded.updated_at",
+            params![social_title_id, r, now],
+        )?;
+    }
+    if new_liked != 0 {
+        conn.execute(
+            "INSERT INTO title_likes (social_title_id, liked_at) VALUES (?1, ?2)
+             ON CONFLICT(social_title_id) DO UPDATE SET liked_at = excluded.liked_at",
+            params![social_title_id, now],
+        )?;
+    }
+
+    let _ = created_at;
+    list_diary(conn, 500)?
+        .into_iter()
+        .find(|e| e.id == input.id)
+        .ok_or_else(|| AppError::Message("Diary entry not found".into()))
+}
+
+pub fn delete_diary_entry(conn: &Connection, id: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM diary_entries WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn list_recent_activity(conn: &Connection, limit: i64) -> AppResult<Vec<ActivityEvent>> {
+    let profile = get_user_profile(conn)?;
+    if !profile.show_recent_activity {
+        return Ok(vec![]);
+    }
+
+    let mut events = Vec::new();
+
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.kind, a.payload, a.created_at, a.social_title_id,
+                t.id, t.kind, t.local_title_id, t.provider_id, t.provider_title_id,
+                t.primary_title, t.cover_path, t.author, t.content_type, t.created_at, t.updated_at
+         FROM activity_events a
+         LEFT JOIN social_titles t ON t.id = a.social_title_id
+         ORDER BY a.created_at DESC
+         LIMIT ?1",
+    )?;
+    let rows = stmt.query_map(params![limit], |row| {
+        let payload_raw: String = row.get(2)?;
+        let payload: serde_json::Value =
+            serde_json::from_str(&payload_raw).unwrap_or(serde_json::json!({}));
+        let joined_id: Option<String> = row.get(5)?;
+        let title = match joined_id {
+            Some(id) => Some(SocialTitle {
+                id,
+                kind: row.get(6)?,
+                local_title_id: row.get(7)?,
+                provider_id: row.get(8)?,
+                provider_title_id: row.get(9)?,
+                primary_title: row.get(10)?,
+                cover_path: row.get(11)?,
+                author: row.get(12)?,
+                content_type: row.get(13)?,
+                created_at: row.get(14)?,
+                updated_at: row.get(15)?,
+            }),
+            None => None,
+        };
+        Ok(ActivityEvent {
+            id: row.get(0)?,
+            kind: row.get(1)?,
+            payload,
+            created_at: row.get(3)?,
+            title,
+        })
+    })?;
+    for row in rows {
+        events.push(row?);
+    }
+
+    // Merge recent reading opens as synthetic `read` events.
+    let remaining = (limit as usize).saturating_sub(events.len()).max(20);
+    let history = list_history(conn, remaining as i64)?;
+    for item in history {
+        let social_id = if let (Some(provider), Some(provider_title)) =
+            (&item.edition.provider_id, &item.edition.provider_title_id)
+        {
+            format!("remote:{provider}:{provider_title}")
+        } else {
+            format!("local:{}", item.title.id)
+        };
+        let title = get_social_title(conn, &social_id)?.unwrap_or(SocialTitle {
+            id: social_id.clone(),
+            kind: if social_id.starts_with("remote:") {
+                "remote".into()
+            } else {
+                "local".into()
+            },
+            local_title_id: Some(item.title.id.clone()),
+            provider_id: item.edition.provider_id.clone(),
+            provider_title_id: item.edition.provider_title_id.clone(),
+            primary_title: item.title.primary_title.clone(),
+            cover_path: item.title.cover_path.clone(),
+            author: item.title.author.clone(),
+            content_type: item.title.content_type.clone(),
+            created_at: item.opened_at.clone(),
+            updated_at: item.opened_at.clone(),
+        });
+        events.push(ActivityEvent {
+            id: format!("read:{}", item.id),
+            kind: "read".into(),
+            title: Some(title),
+            payload: serde_json::json!({
+                "chapterTitle": item.chapter.as_ref().map(|c| c.title.clone()),
+            }),
+            created_at: item.opened_at,
+        });
+    }
+
+    events.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    events.truncate(limit as usize);
+    Ok(events)
 }

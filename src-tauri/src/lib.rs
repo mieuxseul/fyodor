@@ -9,7 +9,8 @@ mod state;
 use tauri::Manager;
 
 use commands::{
-    atsu, import, kotatsu, library, mangadex, organization, reader, settings, system, updates,
+    atsu, downloads, import, kotatsu, library, mangadex, organization, profile, reader, settings,
+    system, updates,
 };
 use state::AppState;
 
@@ -40,9 +41,14 @@ pub fn run() {
             settings::set_setting,
             settings::get_app_paths,
             settings::backup_database,
+            settings::restore_database,
+            settings::get_storage_usage,
+            settings::clear_pages_cache,
             library::list_library,
             library::get_title_details,
+            library::mark_title_opened,
             library::update_title,
+            library::set_title_cover_from_path,
             library::remove_from_library,
             library::search_library,
             library::get_remote_library_ref,
@@ -54,6 +60,7 @@ pub fn run() {
             import::relink_local_file,
             organization::list_history,
             organization::clear_history,
+            organization::clear_history_for_title,
             organization::list_bookmarks,
             organization::create_bookmark,
             organization::delete_bookmark,
@@ -85,6 +92,23 @@ pub fn run() {
             reader::get_reading_progress,
             reader::save_reading_progress,
             reader::open_edition_for_reading,
+            downloads::list_downloads,
+            downloads::download_remote_chapter,
+            downloads::delete_download,
+            profile::get_profile,
+            profile::update_profile,
+            profile::pick_profile_avatar,
+            profile::list_profile_favorites,
+            profile::set_profile_favorite,
+            profile::clear_profile_favorite,
+            profile::get_title_social,
+            profile::set_title_rating,
+            profile::toggle_title_like,
+            profile::list_diary,
+            profile::create_diary_entry,
+            profile::update_diary_entry,
+            profile::delete_diary_entry,
+            profile::list_recent_activity,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Fyodor");

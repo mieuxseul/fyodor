@@ -21,6 +21,11 @@ pub fn clear_history(state: State<'_, AppState>) -> AppResult<()> {
 }
 
 #[tauri::command]
+pub fn clear_history_for_title(state: State<'_, AppState>, title_id: String) -> AppResult<()> {
+    state.with_db(|conn| repos::clear_history_for_title(conn, &title_id))
+}
+
+#[tauri::command]
 pub fn list_bookmarks(state: State<'_, AppState>) -> AppResult<Vec<Bookmark>> {
     state.with_db(|conn| repos::list_bookmarks(conn))
 }

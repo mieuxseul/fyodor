@@ -1,9 +1,11 @@
 pub mod atsu;
+pub mod downloads;
 pub mod import;
 pub mod kotatsu;
 pub mod library;
 pub mod mangadex;
 pub mod organization;
+pub mod profile;
 pub mod reader;
 pub mod settings;
 pub mod system;

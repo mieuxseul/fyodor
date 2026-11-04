@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use crate::error::{AppError, AppResult};
 
 static BRIDGE: OnceLock<Mutex<Option<Bridge>>> = OnceLock::new();
+static SOURCES_CACHE: OnceLock<Mutex<Option<Vec<KotatsuSource>>>> = OnceLock::new();
 
 struct Bridge {
     child: Child,
@@ -126,12 +127,21 @@ fn spawn_bridge() -> AppResult<Bridge> {
     let java = find_java()?;
     let jar = find_jar()?;
     let mut cmd = Command::new(&java);
-    cmd.arg("-jar")
-        .arg(&jar)
-        .arg("serve")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+    // Force UTF-8 before -jar so list_sources titles (CJK, etc.) don't land as
+    // the Windows ANSI code page — Rust's pipe reader expects UTF-8.
+    cmd.args([
+        "-Dfile.encoding=UTF-8",
+        "-Dstdout.encoding=UTF-8",
+        "-Dstderr.encoding=UTF-8",
+        "-Dsun.stdout.encoding=UTF-8",
+        "-Dsun.stderr.encoding=UTF-8",
+        "-jar",
+    ])
+    .arg(&jar)
+    .arg("serve")
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null());
 
     // Hide the JDK console window on Windows (java.exe is a console subsystem binary).
     #[cfg(windows)]
@@ -180,6 +190,23 @@ fn with_bridge<T>(f: impl FnOnce(&mut Bridge) -> AppResult<T>) -> AppResult<T> {
     }
 }
 
+fn read_bridge_line(reader: &mut impl BufRead) -> AppResult<String> {
+    let mut buf = Vec::new();
+    reader
+        .read_until(b'\n', &mut buf)
+        .map_err(|e| AppError::from(format!("Kotatsu bridge read failed: {e}")))?;
+    while matches!(buf.last(), Some(b'\n' | b'\r')) {
+        buf.pop();
+    }
+    match String::from_utf8(buf) {
+        Ok(s) => Ok(s),
+        Err(err) => {
+            // Tolerate a legacy JVM still emitting the Windows code page.
+            Ok(String::from_utf8_lossy(&err.into_bytes()).into_owned())
+        }
+    }
+}
+
 fn request(bridge: &mut Bridge, mut body: Value) -> AppResult<Value> {
     let id = bridge.next_id;
     bridge.next_id += 1;
@@ -194,11 +221,7 @@ fn request(bridge: &mut Bridge, mut body: Value) -> AppResult<Value> {
         .flush()
         .map_err(|e| AppError::from(format!("Kotatsu bridge flush failed: {e}")))?;
 
-    let mut response_line = String::new();
-    bridge
-        .stdout
-        .read_line(&mut response_line)
-        .map_err(|e| AppError::from(format!("Kotatsu bridge read failed: {e}")))?;
+    let response_line = read_bridge_line(&mut bridge.stdout)?;
     if response_line.is_empty() {
         return Err(AppError::from("Kotatsu bridge closed unexpectedly"));
     }
@@ -222,15 +245,27 @@ pub fn health_check() -> AppResult<()> {
 }
 
 pub fn list_sources() -> AppResult<Vec<KotatsuSource>> {
-    with_bridge(|b| {
+    let cache = SOURCES_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some(cached) = guard.as_ref() {
+            return Ok(cached.clone());
+        }
+    }
+
+    let loaded: Vec<KotatsuSource> = with_bridge(|b| {
         let value = request(b, json!({"op": "list_sources"}))?;
         let sources = value
             .get("sources")
             .cloned()
             .unwrap_or(Value::Array(vec![]));
-        serde_json::from_value(sources)
+        serde_json::from_value::<Vec<KotatsuSource>>(sources)
             .map_err(|e| AppError::from(format!("parse sources: {e}")))
-    })
+    })?;
+
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(loaded.clone());
+    }
+    Ok(loaded)
 }
 
 pub fn search(source: &str, query: &str, limit: u32) -> AppResult<Vec<KotatsuSearchItem>> {

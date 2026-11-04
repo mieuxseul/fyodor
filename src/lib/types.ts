@@ -6,8 +6,8 @@ export type ReadingStatus =
   | 'dropped'
 
 export type ThemePreference = 'dark' | 'light' | 'system'
-export type LibraryView = 'grid' | 'list'
-export type ReadingMode = 'page' | 'vertical'
+export type LibraryView = 'grid' | 'list' | 'compact' | 'details'
+export type ReadingMode = 'page' | 'double' | 'vertical'
 export type ReadingDirection = 'ltr' | 'rtl'
 export type FitMode = 'width' | 'height' | 'screen' | 'original'
 
@@ -92,6 +92,8 @@ export interface LibraryItem {
   progress?: ReadingProgress | null
   chapterCount: number
   currentChapterTitle?: string | null
+  /** 0–100 reading progress through chapters */
+  progressPercent?: number
 }
 
 export interface TitleDetails {
@@ -133,6 +135,14 @@ export interface AppPaths {
   cacheDir: string
 }
 
+export interface StorageUsage {
+  savedMangaBytes: number
+  pagesCacheBytes: number
+  otherCacheBytes: number
+  databaseBytes: number
+  availableBytes?: number | null
+}
+
 export interface UpdateTitleInput {
   id: string
   primaryTitle?: string
@@ -151,6 +161,8 @@ export interface SaveProgressInput {
   pageIndex: number
   scrollRatio: number
   completed: boolean
+  /** Skip last-opened / history side effects (incognito or private title). */
+  suppressActivity?: boolean
 }
 
 export interface HistoryItem {
@@ -183,4 +195,136 @@ export interface CreateBookmarkInput {
   pageIndex?: number | null
   scrollRatio?: number | null
   note?: string | null
+}
+
+export interface DownloadRecord {
+  id: string
+  editionId?: string | null
+  chapterId?: string | null
+  providerId?: string | null
+  providerTitleId?: string | null
+  remoteChapterId?: string | null
+  titleLabel?: string | null
+  chapterTitle?: string | null
+  status: string
+  progress: number
+  error?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface EnqueueDownloadInput {
+  providerId: string
+  providerName: string
+  providerTitleId: string
+  remoteChapterId: string
+  chapterTitle: string
+  primaryTitle: string
+  coverUrl?: string | null
+  contentType?: string | null
+}
+
+export interface UserProfile {
+  displayName: string
+  bio?: string | null
+  avatarPath?: string | null
+  showRecentActivity: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UpdateProfileInput {
+  displayName?: string
+  bio?: string | null
+  avatarPath?: string | null
+  clearAvatar?: boolean
+  showRecentActivity?: boolean
+}
+
+export interface SocialTitle {
+  id: string
+  kind: string
+  localTitleId?: string | null
+  providerId?: string | null
+  providerTitleId?: string | null
+  primaryTitle: string
+  coverPath?: string | null
+  author?: string | null
+  contentType: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SocialTitleInput {
+  kind: 'local' | 'remote' | string
+  localTitleId?: string | null
+  providerId?: string | null
+  providerTitleId?: string | null
+  primaryTitle: string
+  coverPath?: string | null
+  author?: string | null
+  contentType?: string | null
+}
+
+export interface ProfileFavorite {
+  slot: number
+  title: SocialTitle
+  updatedAt: string
+}
+
+export interface TitleSocialState {
+  title: SocialTitle
+  rating?: number | null
+  liked: boolean
+  favoriteSlot?: number | null
+}
+
+export interface DiaryEntry {
+  id: string
+  title: SocialTitle
+  loggedOn: string
+  rating?: number | null
+  review?: string | null
+  liked: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateDiaryInput {
+  title: SocialTitleInput
+  loggedOn: string
+  rating?: number | null
+  review?: string | null
+  liked?: boolean
+}
+
+export interface UpdateDiaryInput {
+  id: string
+  loggedOn?: string
+  rating?: number | null
+  clearRating?: boolean
+  review?: string | null
+  liked?: boolean
+}
+
+export interface ActivityEvent {
+  id: string
+  kind: string
+  title?: SocialTitle | null
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
+export interface SetFavoriteInput {
+  slot: number
+  title: SocialTitleInput
+}
+
+export interface SetRatingInput {
+  title: SocialTitleInput
+  rating?: number | null
+}
+
+export interface ToggleLikeInput {
+  title: SocialTitleInput
 }

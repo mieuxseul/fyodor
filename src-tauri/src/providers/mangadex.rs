@@ -613,6 +613,39 @@ pub async fn chapter_pages(manga_id: &str, chapter_id: &str) -> AppResult<MangaD
     })
 }
 
+/// Fetch a MangaDex at-home chapter page over HTTPS.
+pub async fn fetch_https_image_bytes(image_url: &str) -> AppResult<Vec<u8>> {
+    let parsed = reqwest::Url::parse(image_url)
+        .map_err(|e| AppError::Message(format!("Invalid MangaDex page URL: {e}")))?;
+    if parsed.scheme() != "https" {
+        return Err(AppError::Message(
+            "MangaDex page fetch only allows https URLs".into(),
+        ));
+    }
+
+    let client = client();
+    let response = client
+        .get(parsed)
+        .header(
+            "Accept",
+            "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        )
+        .send()
+        .await
+        .map_err(|e| AppError::Message(format!("MangaDex page fetch failed: {e}")))?;
+    if !response.status().is_success() {
+        return Err(AppError::Message(format!(
+            "MangaDex page fetch HTTP {}",
+            response.status()
+        )));
+    }
+    response
+        .bytes()
+        .await
+        .map(|b| b.to_vec())
+        .map_err(|e| AppError::Message(format!("MangaDex page body error: {e}")))
+}
+
 /// Proxy a MangaDex cover thumbnail. Restricted to uploads.mangadex.org/covers/.
 pub async fn fetch_cover_bytes(cover_url: &str) -> AppResult<Vec<u8>> {
     let parsed = reqwest::Url::parse(cover_url)

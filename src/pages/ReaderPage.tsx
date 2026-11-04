@@ -5,6 +5,8 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  EyeOff,
+  Keyboard,
   Maximize2,
   Minimize2,
   Settings2,
@@ -22,11 +24,29 @@ import {
 } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
+import { ReaderKeyboardCheatsheet } from '@/components/reader/ReaderKeyboardCheatsheet'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { api, isTauri, resolveRemoteImageUrl, toAssetUrl, toFyodorCdnUrl } from '@/lib/api'
 import { cn } from '@/lib/cn'
+import { FULLSCREEN_EVENT } from '@/hooks/useF11Fullscreen'
+import {
+  isIncognitoSession,
+  setIncognitoSession,
+  shouldSuppressActivity,
+  subscribeIncognito,
+} from '@/lib/incognito'
 import { markLocalChapterRead } from '@/lib/local-read-chapters'
+import {
+  EDGE_PADDING_LABELS,
+  edgePaddingStyle,
+  getEdgePaddingPreset,
+  normalizeReadingMode,
+  pageRangeLabel,
+  pageStepForMode,
+  setEdgePaddingPreset,
+  type EdgePaddingPreset,
+} from '@/lib/reader-layout'
 import { loadRemoteProgress, saveRemoteProgress } from '@/lib/remote-progress'
 import { decodeKotatsuTitleId } from '@/source-network/providers/kotatsu'
 import type {
@@ -117,16 +137,21 @@ export function ReaderPage() {
   const [mode, setMode] = useState<ReadingMode>('page')
   const [direction, setDirection] = useState<ReadingDirection>('ltr')
   const [fit, setFit] = useState<FitMode>('width')
+  const [edgePadding, setEdgePadding] = useState<EdgePaddingPreset>(() =>
+    getEdgePaddingPreset(),
+  )
   const [zoom, setZoom] = useState(1)
   const [styleOpen, setStyleOpen] = useState(false)
   const [fitOpen, setFitOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [cheatsheetOpen, setCheatsheetOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pagesError, setPagesError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [pagesLoading, setPagesLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [privacyTick, setPrivacyTick] = useState(0)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const saveTimer = useRef<number | null>(null)
@@ -137,11 +162,18 @@ export function ReaderPage() {
   )
   const chapterQueryOnOpenRef = useRef<string | null>(searchParams.get('chapter'))
   const chapterIdRef = useRef<string | null>(null)
-
   const chapterIndex = useMemo(() => {
     if (!session || !chapterId) return 0
     return Math.max(0, session.chapters.findIndex((c) => c.id === chapterId))
   }, [session, chapterId])
+
+  const sessionIncognito = useMemo(
+    () => isIncognitoSession(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [privacyTick],
+  )
+
+  useEffect(() => subscribeIncognito(() => setPrivacyTick((n) => n + 1)), [])
 
   const persistProgress = useCallback(
     async (nextPage: number, scrollRatio = 0, completed = false) => {
@@ -163,10 +195,15 @@ export function ReaderPage() {
           pageIndex: nextPage,
           scrollRatio,
           completed,
+          suppressActivity: shouldSuppressActivity(
+            editionId,
+            session?.title.id,
+            session?.edition.id,
+          ),
         })
       }, 280)
     },
-    [editionId, chapterId, remote],
+    [editionId, chapterId, remote, session?.title.id, session?.edition.id, privacyTick],
   )
 
   const fetchChapterPages = useCallback(
@@ -358,10 +395,13 @@ export function ReaderPage() {
           return
         }
 
-        const data = await api.openEditionForReading(editionId)
+        const data = await api.openEditionForReading(
+          editionId,
+          shouldSuppressActivity(editionId),
+        )
         if (cancelled) return
         setSession(data)
-        setMode((data.edition.readingMode as ReadingMode) || 'page')
+        setMode(normalizeReadingMode(data.edition.readingMode))
         setDirection((data.edition.readingDirection as ReadingDirection) || 'ltr')
 
         const initialChapter =
@@ -414,6 +454,7 @@ export function ReaderPage() {
         pageIndex,
         scrollRatio: 0,
         completed: false,
+        suppressActivity: shouldSuppressActivity(editionId),
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -421,9 +462,12 @@ export function ReaderPage() {
 
   const goPage = useCallback(
     (delta: number) => {
+      // ±1 from chrome/keyboard means one spread in double-page mode.
+      const moved =
+        Math.abs(delta) === 1 ? Math.sign(delta) * pageStepForMode(mode) : delta
       setPageIndex((current) => {
         const last = Math.max(pages.length - 1, 0)
-        const next = Math.min(Math.max(current + delta, 0), last)
+        const next = Math.min(Math.max(current + moved, 0), last)
         if (next !== current) {
           const completed = next >= last && last > 0
           queueMicrotask(() => {
@@ -433,12 +477,13 @@ export function ReaderPage() {
         return next
       })
     },
-    [pages.length, persistProgress],
+    [pages.length, persistProgress, mode],
   )
 
   useEffect(() => {
-    if (mode !== 'page' || pages.length === 0) return
-    for (const offset of [-1, 0, 1, 2]) {
+    if (mode === 'vertical' || pages.length === 0) return
+    const lookAhead = mode === 'double' ? [0, 1, 2, 3, -1, -2] : [-1, 0, 1, 2]
+    for (const offset of lookAhead) {
       const path = pages[pageIndex + offset]
       if (path) preloadPageImage(path)
     }
@@ -482,25 +527,40 @@ export function ReaderPage() {
       const target = event.target as HTMLElement | null
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
 
+      if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+        event.preventDefault()
+        setCheatsheetOpen((open) => !open)
+        return
+      }
+
+      if (cheatsheetOpen) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          setCheatsheetOpen(false)
+        }
+        return
+      }
+
       const forward = direction === 'ltr' ? 1 : -1
+      const paged = mode === 'page' || mode === 'double'
       switch (event.key) {
         case 'ArrowRight':
           event.preventDefault()
-          if (mode === 'page') goPage(forward)
+          if (paged) goPage(forward)
           break
         case 'ArrowLeft':
           event.preventDefault()
-          if (mode === 'page') goPage(-forward)
+          if (paged) goPage(-forward)
           break
         case ' ':
         case 'PageDown':
           event.preventDefault()
-          if (mode === 'page') goPage(1)
+          if (paged) goPage(1)
           else scrollRef.current?.scrollBy({ top: window.innerHeight * 0.9, behavior: 'smooth' })
           break
         case 'PageUp':
           event.preventDefault()
-          if (mode === 'page') goPage(-1)
+          if (paged) goPage(-1)
           else scrollRef.current?.scrollBy({ top: -window.innerHeight * 0.9, behavior: 'smooth' })
           break
         case 'Home':
@@ -515,6 +575,27 @@ export function ReaderPage() {
             setPageIndex(last)
             void persistProgress(last)
           }
+          break
+        case '+':
+        case '=':
+          event.preventDefault()
+          setZoom((value) => Math.min(3, Math.round((value + 0.1) * 100) / 100))
+          break
+        case '-':
+        case '_':
+          event.preventDefault()
+          setZoom((value) => Math.max(0.5, Math.round((value - 0.1) * 100) / 100))
+          break
+        case 'f':
+        case 'F':
+          event.preventDefault()
+          void toggleFullscreen()
+          break
+        case ',':
+          event.preventDefault()
+          setSettingsOpen(true)
+          setStyleOpen(false)
+          setFitOpen(false)
           break
         case 'Escape':
           if (fullscreen) void toggleFullscreen(false)
@@ -537,6 +618,7 @@ export function ReaderPage() {
     remote,
     isRemote,
     session,
+    cheatsheetOpen,
   ])
 
   async function toggleFullscreen(force?: boolean) {
@@ -546,6 +628,23 @@ export function ReaderPage() {
     await win.setFullscreen(next)
     setFullscreen(next)
   }
+
+  useEffect(() => {
+    const sync = (event: Event) => {
+      const detail = (event as CustomEvent<{ fullscreen?: boolean }>).detail
+      if (typeof detail?.fullscreen === 'boolean') {
+        setFullscreen(detail.fullscreen)
+        return
+      }
+      if (!isTauri()) return
+      void getCurrentWindow()
+        .isFullscreen()
+        .then(setFullscreen)
+        .catch(() => undefined)
+    }
+    window.addEventListener(FULLSCREEN_EVENT, sync)
+    return () => window.removeEventListener(FULLSCREEN_EVENT, sync)
+  }, [])
 
   async function bookmarkPosition() {
     if (!session || !isTauri()) return
@@ -634,6 +733,17 @@ export function ReaderPage() {
   const chapterLabel =
     chapter?.number != null ? `Ch. ${chapter.number}` : chapter?.title || 'Chapter'
   const editionLabel = session.edition.label || session.edition.providerId || 'Local'
+  const padding = edgePaddingStyle(edgePadding)
+  const spreadSecond = mode === 'double' ? pages[pageIndex + 1] : undefined
+  const pageImages =
+    mode === 'double'
+      ? [
+          { path: pages[pageIndex], index: pageIndex },
+          ...(spreadSecond
+            ? [{ path: spreadSecond, index: pageIndex + 1 }]
+            : []),
+        ].filter((item): item is { path: string; index: number } => Boolean(item.path))
+      : []
 
   return (
     <div className="relative h-full overflow-hidden fy-reader-ambient text-[var(--fy-text)]">
@@ -649,11 +759,22 @@ export function ReaderPage() {
               <X size={18} />
             </button>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-semibold leading-snug tracking-tight">
-                {session.title.primaryTitle}
+              <div className="flex items-center gap-1.5">
+                <div className="truncate text-sm font-semibold leading-snug tracking-tight">
+                  {session.title.primaryTitle}
+                </div>
+                {sessionIncognito ? (
+                  <span
+                    className="shrink-0 text-[var(--fy-text-muted)]"
+                    title="Incognito session"
+                  >
+                    <EyeOff size={14} />
+                  </span>
+                ) : null}
               </div>
               <div className="mt-0.5 truncate text-xs text-[var(--fy-text-muted)]">
                 {editionLabel}
+                {sessionIncognito ? ' · Incognito' : ''}
               </div>
             </div>
           </div>
@@ -714,8 +835,8 @@ export function ReaderPage() {
             >
               <ChevronLeft size={16} />
             </button>
-            <span className="min-w-[4.5rem] text-center font-mono text-xs text-[var(--fy-text-muted)]">
-              {pageCount === 0 ? '0 / 0' : `${pageIndex + 1} / ${pageCount}`}
+            <span className="min-w-[5.5rem] text-center font-mono text-xs text-[var(--fy-text-muted)]">
+              {pageRangeLabel(pageIndex, pageCount, mode)}
             </span>
             <button
               type="button"
@@ -753,10 +874,11 @@ export function ReaderPage() {
               <select
                 className="mt-1 w-full fy-liquid-control px-2 py-1.5 text-sm text-[var(--fy-text)]"
                 value={mode}
-                onChange={(e) => setMode(e.target.value as ReadingMode)}
+                onChange={(e) => setMode(normalizeReadingMode(e.target.value))}
               >
-                <option value="page">Page-based</option>
-                <option value="vertical">Vertical</option>
+                <option value="page">Single page</option>
+                <option value="double">Double page</option>
+                <option value="vertical">Webtoon / vertical</option>
               </select>
             </label>
             <label className="mt-2 block text-xs text-[var(--fy-text-muted)]">
@@ -770,6 +892,29 @@ export function ReaderPage() {
                 <option value="rtl">Right to left</option>
               </select>
             </label>
+            <div className="mt-3">
+              <div className="mb-1.5 text-xs text-[var(--fy-text-muted)]">Edge padding</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {(Object.keys(EDGE_PADDING_LABELS) as EdgePaddingPreset[]).map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    className={cn(
+                      'rounded-md border px-2 py-1.5 text-xs',
+                      edgePadding === preset
+                        ? 'border-[var(--fy-border)] bg-[var(--fy-nav-active)]'
+                        : 'border-[var(--fy-border-subtle)] hover:bg-[var(--fy-nav-active)]',
+                    )}
+                    onClick={() => setEdgePadding(setEdgePaddingPreset(preset))}
+                  >
+                    {EDGE_PADDING_LABELS[preset]}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[10px] leading-snug text-[var(--fy-text-muted)]">
+                Side gutters for webtoon strips and page spreads. Saved on this device.
+              </p>
+            </div>
           </SidebarSection>
 
           <SidebarSection
@@ -821,6 +966,20 @@ export function ReaderPage() {
                 className="mt-1 w-full"
               />
             </label>
+            <div className="mt-3 space-y-2">
+              <label className="flex items-center gap-2 text-xs text-[var(--fy-text-muted)]">
+                <input
+                  type="checkbox"
+                  checked={sessionIncognito}
+                  onChange={(e) => setIncognitoSession(e.target.checked)}
+                />
+                Incognito session
+              </label>
+              <p className="text-[10px] leading-snug text-[var(--fy-text-muted)]">
+                Hides history and Continue reading while on. Progress still
+                saves for resume.
+              </p>
+            </div>
             <div className="mt-3 flex flex-col gap-1.5">
               <Button size="sm" variant="secondary" onClick={() => void bookmarkPosition()}>
                 Bookmark position
@@ -835,6 +994,9 @@ export function ReaderPage() {
                     <Maximize2 size={14} /> Fullscreen
                   </>
                 )}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setCheatsheetOpen(true)}>
+                <Keyboard size={14} /> Keyboard shortcuts
               </Button>
             </div>
           </SidebarSection>
@@ -853,6 +1015,11 @@ export function ReaderPage() {
           ) : null}
         </div>
       </aside>
+
+      <ReaderKeyboardCheatsheet
+        open={cheatsheetOpen}
+        onClose={() => setCheatsheetOpen(false)}
+      />
 
       <main className="absolute inset-0 z-0">
         {pagesError ? (
@@ -877,14 +1044,21 @@ export function ReaderPage() {
         ) : mode === 'vertical' ? (
           <div
             ref={scrollRef}
-            className="h-full overflow-y-auto overscroll-contain px-4 py-4 pl-[304px]"
+            className="h-full overflow-y-auto overscroll-contain py-4"
+            style={{ paddingRight: padding.padXPx, paddingLeft: 304 + padding.padXPx }}
             onScroll={(e) => {
               const el = e.currentTarget
               const ratio = el.scrollTop / Math.max(el.scrollHeight - el.clientHeight, 1)
               void persistProgress(pageIndex, ratio)
             }}
           >
-            <div className="mx-auto flex w-full max-w-[920px] flex-col items-center gap-2">
+            <div
+              className="mx-auto flex w-full flex-col items-center"
+              style={{
+                maxWidth: padding.maxWidth,
+                gap: padding.gapPx,
+              }}
+            >
               {pages.map((page, index) => (
                 <ReaderPageImage
                   key={`${page}-${index}`}
@@ -897,29 +1071,70 @@ export function ReaderPage() {
               ))}
             </div>
           </div>
-        ) : (
-          <div className="relative flex h-full items-center justify-center overflow-auto p-4 pl-[304px]">
-            {pages.length === 0 ? (
+        ) : mode === 'double' ? (
+          <div
+            className="relative flex h-full items-center justify-center overflow-auto py-4"
+            style={{ paddingRight: padding.padXPx, paddingLeft: 304 + padding.padXPx }}
+          >
+            {pageImages.length === 0 ? (
               <p className="text-[var(--fy-text-muted)]">No page image</p>
             ) : (
-              pages.map((page, index) => {
-                if (Math.abs(index - pageIndex) > 1) return null
-                const active = index === pageIndex
-                return (
+              <div
+                className="flex max-h-full max-w-full items-center justify-center"
+                style={{
+                  maxWidth: padding.maxWidth,
+                  gap: padding.gapPx,
+                  flexDirection: direction === 'rtl' ? 'row-reverse' : 'row',
+                }}
+              >
+                {pageImages.map((item) => (
                   <ReaderPageImage
-                    key={`${page}-${index}`}
-                    path={page}
-                    alt={`Page ${index + 1}`}
+                    key={`${item.path}-${item.index}`}
+                    path={item.path}
+                    alt={`Page ${item.index + 1}`}
                     className={cn(
-                      'max-h-full max-w-full',
-                      active ? 'relative' : 'pointer-events-none absolute opacity-0',
+                      'max-h-full object-contain',
+                      pageImages.length > 1 ? 'max-w-[50%]' : 'max-w-full',
                     )}
                     style={pageStyle(false)}
                     eager
-                    priority={active}
+                    priority
                   />
-                )
-              })
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            className="relative flex h-full items-center justify-center overflow-auto py-4"
+            style={{ paddingRight: padding.padXPx, paddingLeft: 304 + padding.padXPx }}
+          >
+            {pages.length === 0 ? (
+              <p className="text-[var(--fy-text-muted)]">No page image</p>
+            ) : (
+              <div
+                className="relative flex max-h-full max-w-full items-center justify-center"
+                style={{ maxWidth: padding.maxWidth }}
+              >
+                {pages.map((page, index) => {
+                  if (Math.abs(index - pageIndex) > 1) return null
+                  const active = index === pageIndex
+                  return (
+                    <ReaderPageImage
+                      key={`${page}-${index}`}
+                      path={page}
+                      alt={`Page ${index + 1}`}
+                      className={cn(
+                        'max-h-full max-w-full',
+                        active ? 'relative' : 'pointer-events-none absolute opacity-0',
+                      )}
+                      style={pageStyle(false)}
+                      eager
+                      priority={active}
+                    />
+                  )
+                })}
+              </div>
             )}
           </div>
         )}

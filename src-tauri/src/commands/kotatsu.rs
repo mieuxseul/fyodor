@@ -11,8 +11,10 @@ pub fn kotatsu_health() -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn kotatsu_list_sources() -> AppResult<Vec<KotatsuSource>> {
-    kotatsu::list_sources()
+pub async fn kotatsu_list_sources() -> AppResult<Vec<KotatsuSource>> {
+    tauri::async_runtime::spawn_blocking(kotatsu::list_sources)
+        .await
+        .map_err(|e| crate::error::AppError::from(format!("Kotatsu list_sources join: {e}")))?
 }
 
 #[tauri::command]

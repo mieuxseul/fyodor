@@ -95,6 +95,8 @@ pub struct LibraryItem {
     pub progress: Option<ReadingProgress>,
     pub chapter_count: i64,
     pub current_chapter_title: Option<String>,
+    #[serde(default)]
+    pub progress_percent: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +132,8 @@ pub struct SaveProgressInput {
     pub page_index: i64,
     pub scroll_ratio: f64,
     pub completed: bool,
+    #[serde(default)]
+    pub suppress_activity: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,6 +163,16 @@ pub struct AppPaths {
     pub database_path: String,
     pub covers_dir: String,
     pub cache_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageUsage {
+    pub saved_manga_bytes: u64,
+    pub pages_cache_bytes: u64,
+    pub other_cache_bytes: u64,
+    pub database_bytes: u64,
+    pub available_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,4 +242,166 @@ pub struct RemoteLibraryRef {
     pub provider_id: String,
     pub provider_title_id: String,
     pub in_library: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadRecord {
+    pub id: String,
+    pub edition_id: Option<String>,
+    pub chapter_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub provider_title_id: Option<String>,
+    pub remote_chapter_id: Option<String>,
+    pub title_label: Option<String>,
+    pub chapter_title: Option<String>,
+    pub status: String,
+    pub progress: f64,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnqueueDownloadInput {
+    pub provider_id: String,
+    pub provider_name: String,
+    pub provider_title_id: String,
+    pub remote_chapter_id: String,
+    pub chapter_title: String,
+    pub primary_title: String,
+    pub cover_url: Option<String>,
+    pub content_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserProfile {
+    pub display_name: String,
+    pub bio: Option<String>,
+    pub avatar_path: Option<String>,
+    pub show_recent_activity: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProfileInput {
+    pub display_name: Option<String>,
+    pub bio: Option<String>,
+    pub avatar_path: Option<String>,
+    pub clear_avatar: Option<bool>,
+    pub show_recent_activity: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SocialTitle {
+    pub id: String,
+    pub kind: String,
+    pub local_title_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub provider_title_id: Option<String>,
+    pub primary_title: String,
+    pub cover_path: Option<String>,
+    pub author: Option<String>,
+    pub content_type: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SocialTitleInput {
+    pub kind: String,
+    pub local_title_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub provider_title_id: Option<String>,
+    pub primary_title: String,
+    pub cover_path: Option<String>,
+    pub author: Option<String>,
+    pub content_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileFavorite {
+    pub slot: i64,
+    pub title: SocialTitle,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TitleSocialState {
+    pub title: SocialTitle,
+    pub rating: Option<f64>,
+    pub liked: bool,
+    pub favorite_slot: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiaryEntry {
+    pub id: String,
+    pub title: SocialTitle,
+    pub logged_on: String,
+    pub rating: Option<f64>,
+    pub review: Option<String>,
+    pub liked: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateDiaryInput {
+    pub title: SocialTitleInput,
+    pub logged_on: String,
+    pub rating: Option<f64>,
+    pub review: Option<String>,
+    pub liked: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateDiaryInput {
+    pub id: String,
+    pub logged_on: Option<String>,
+    pub rating: Option<f64>,
+    pub clear_rating: Option<bool>,
+    pub review: Option<String>,
+    pub liked: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityEvent {
+    pub id: String,
+    pub kind: String,
+    pub title: Option<SocialTitle>,
+    pub payload: serde_json::Value,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetFavoriteInput {
+    pub slot: i64,
+    pub title: SocialTitleInput,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetRatingInput {
+    pub title: SocialTitleInput,
+    pub rating: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToggleLikeInput {
+    pub title: SocialTitleInput,
 }

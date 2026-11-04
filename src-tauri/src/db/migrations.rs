@@ -143,6 +143,81 @@ const MIGRATIONS: &[&str] = &[
       ON editions(provider_id, provider_title_id)
       WHERE provider_id IS NOT NULL AND provider_title_id IS NOT NULL;
     "#,
+    // v3 — offline remote chapter download metadata
+    r#"
+    ALTER TABLE download_records ADD COLUMN provider_id TEXT;
+    ALTER TABLE download_records ADD COLUMN provider_title_id TEXT;
+    ALTER TABLE download_records ADD COLUMN remote_chapter_id TEXT;
+    ALTER TABLE download_records ADD COLUMN title_label TEXT;
+    ALTER TABLE download_records ADD COLUMN chapter_title TEXT;
+    "#,
+    // v4 — local profile, ratings, likes, diary, activity
+    r#"
+    CREATE TABLE IF NOT EXISTS user_profile (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      display_name TEXT NOT NULL DEFAULT 'Reader',
+      bio TEXT,
+      avatar_path TEXT,
+      show_recent_activity INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS social_titles (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      local_title_id TEXT,
+      provider_id TEXT,
+      provider_title_id TEXT,
+      primary_title TEXT NOT NULL,
+      cover_path TEXT,
+      author TEXT,
+      content_type TEXT NOT NULL DEFAULT 'manga',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS profile_favorites (
+      slot INTEGER PRIMARY KEY CHECK (slot BETWEEN 0 AND 3),
+      social_title_id TEXT NOT NULL REFERENCES social_titles(id) ON DELETE CASCADE,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS title_ratings (
+      social_title_id TEXT PRIMARY KEY REFERENCES social_titles(id) ON DELETE CASCADE,
+      rating REAL NOT NULL CHECK (rating >= 0.5 AND rating <= 5),
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS title_likes (
+      social_title_id TEXT PRIMARY KEY REFERENCES social_titles(id) ON DELETE CASCADE,
+      liked_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS diary_entries (
+      id TEXT PRIMARY KEY,
+      social_title_id TEXT NOT NULL REFERENCES social_titles(id) ON DELETE CASCADE,
+      logged_on TEXT NOT NULL,
+      rating REAL CHECK (rating IS NULL OR (rating >= 0.5 AND rating <= 5)),
+      review TEXT,
+      liked INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS activity_events (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      social_title_id TEXT REFERENCES social_titles(id) ON DELETE SET NULL,
+      payload TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_diary_logged ON diary_entries(logged_on DESC, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_events(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_social_titles_local ON social_titles(local_title_id);
+    CREATE INDEX IF NOT EXISTS idx_social_titles_remote ON social_titles(provider_id, provider_title_id);
+    "#,
 ];
 
 pub fn run_migrations(conn: &Connection) -> AppResult<()> {

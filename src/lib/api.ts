@@ -1,19 +1,34 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 
 import type {
+  ActivityEvent,
   AppPaths,
   Bookmark,
   ChapterPages,
   CreateBookmarkInput,
+  CreateDiaryInput,
+  DiaryEntry,
+  DownloadRecord,
+  EnqueueDownloadInput,
   HistoryItem,
   ImportResult,
   LibraryItem,
   LocalFile,
+  ProfileFavorite,
   ReaderSession,
   ReadingProgress,
   SaveProgressInput,
+  SetFavoriteInput,
+  SetRatingInput,
+  SocialTitleInput,
+  StorageUsage,
   TitleDetails,
+  TitleSocialState,
+  ToggleLikeInput,
+  UpdateDiaryInput,
+  UpdateProfileInput,
   UpdateTitleInput,
+  UserProfile,
 } from './types'
 
 export function isTauri(): boolean {
@@ -48,6 +63,15 @@ export const api = {
   backupDatabase(destination: string): Promise<string> {
     return invoke('backup_database', { destination })
   },
+  restoreDatabase(source: string): Promise<void> {
+    return invoke('restore_database', { source })
+  },
+  getStorageUsage(): Promise<StorageUsage> {
+    return invoke('get_storage_usage')
+  },
+  clearPagesCache(): Promise<number> {
+    return invoke('clear_pages_cache')
+  },
   listLibrary(options?: {
     status?: string
     query?: string
@@ -67,8 +91,14 @@ export const api = {
   getTitleDetails(titleId: string): Promise<TitleDetails> {
     return invoke('get_title_details', { titleId })
   },
+  markTitleOpened(titleId: string): Promise<void> {
+    return invoke('mark_title_opened', { titleId })
+  },
   updateTitle(input: UpdateTitleInput): Promise<void> {
     return invoke('update_title', { input })
+  },
+  setTitleCoverFromPath(titleId: string, sourcePath: string): Promise<string> {
+    return invoke('set_title_cover_from_path', { titleId, sourcePath })
   },
   removeFromLibrary(titleId: string): Promise<void> {
     return invoke('remove_from_library', { titleId })
@@ -94,8 +124,8 @@ export const api = {
   importPath(path: string): Promise<ImportResult> {
     return invoke('import_path', { path })
   },
-  openEditionForReading(editionId: string): Promise<ReaderSession> {
-    return invoke('open_edition_for_reading', { editionId })
+  openEditionForReading(editionId: string, incognito = false): Promise<ReaderSession> {
+    return invoke('open_edition_for_reading', { editionId, incognito })
   },
   getChapterPages(chapterId: string): Promise<ChapterPages> {
     return invoke('get_chapter_pages', { chapterId })
@@ -111,6 +141,9 @@ export const api = {
   },
   clearHistory(): Promise<void> {
     return invoke('clear_history')
+  },
+  clearHistoryForTitle(titleId: string): Promise<void> {
+    return invoke('clear_history_for_title', { titleId })
   },
   listBookmarks(): Promise<Bookmark[]> {
     return invoke('list_bookmarks')
@@ -203,6 +236,57 @@ export const api = {
     notes?: string | null
   }> {
     return invoke('check_for_updates')
+  },
+  listDownloads(limit = 100): Promise<DownloadRecord[]> {
+    return invoke('list_downloads', { limit })
+  },
+  downloadRemoteChapter(input: EnqueueDownloadInput): Promise<DownloadRecord> {
+    return invoke('download_remote_chapter', { input })
+  },
+  deleteDownload(downloadId: string): Promise<void> {
+    return invoke('delete_download', { downloadId })
+  },
+  getProfile(): Promise<UserProfile> {
+    return invoke('get_profile')
+  },
+  updateProfile(input: UpdateProfileInput): Promise<UserProfile> {
+    return invoke('update_profile', { input })
+  },
+  pickProfileAvatar(): Promise<UserProfile> {
+    return invoke('pick_profile_avatar')
+  },
+  listProfileFavorites(): Promise<ProfileFavorite[]> {
+    return invoke('list_profile_favorites')
+  },
+  setProfileFavorite(input: SetFavoriteInput): Promise<ProfileFavorite[]> {
+    return invoke('set_profile_favorite', { input })
+  },
+  clearProfileFavorite(slot: number): Promise<ProfileFavorite[]> {
+    return invoke('clear_profile_favorite', { slot })
+  },
+  getTitleSocial(input: SocialTitleInput): Promise<TitleSocialState> {
+    return invoke('get_title_social', { input })
+  },
+  setTitleRating(input: SetRatingInput): Promise<TitleSocialState> {
+    return invoke('set_title_rating', { input })
+  },
+  toggleTitleLike(input: ToggleLikeInput): Promise<TitleSocialState> {
+    return invoke('toggle_title_like', { input })
+  },
+  listDiary(limit = 100): Promise<DiaryEntry[]> {
+    return invoke('list_diary', { limit })
+  },
+  createDiaryEntry(input: CreateDiaryInput): Promise<DiaryEntry> {
+    return invoke('create_diary_entry', { input })
+  },
+  updateDiaryEntry(input: UpdateDiaryInput): Promise<DiaryEntry> {
+    return invoke('update_diary_entry', { input })
+  },
+  deleteDiaryEntry(id: string): Promise<void> {
+    return invoke('delete_diary_entry', { id })
+  },
+  listRecentActivity(limit = 40): Promise<ActivityEvent[]> {
+    return invoke('list_recent_activity', { limit })
   },
 }
 

@@ -6,6 +6,7 @@ import { RemoteCover } from '@/components/RemoteCover'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { api, isTauri } from '@/lib/api'
+import { filterPublicHistory, subscribeIncognito } from '@/lib/incognito'
 import type { HistoryItem } from '@/lib/types'
 
 function formatOpenedAt(value: string): string {
@@ -29,7 +30,7 @@ export function HistoryPage() {
     setLoading(true)
     setError(null)
     try {
-      setItems(await api.listHistory())
+      setItems(filterPublicHistory(await api.listHistory()))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -39,6 +40,9 @@ export function HistoryPage() {
 
   useEffect(() => {
     void load()
+    return subscribeIncognito(() => {
+      void load()
+    })
   }, [load])
 
   async function clearAll() {

@@ -71,10 +71,10 @@ export function ChapterReadControls({
         <MoreHorizontal size={14} />
       </button>
       {open ? (
-        <div className="fy-liquid-glass absolute right-0 top-full z-20 mt-1 min-w-[10.5rem] overflow-hidden rounded-xl py-1 text-sm shadow-lg">
+        <div className="fy-liquid-menu absolute right-0 top-full z-20 mt-1 min-w-[10.5rem] overflow-hidden rounded-xl py-1 text-sm">
           <button
             type="button"
-            className="relative z-[1] block w-full px-3 py-2 text-left text-[var(--fy-text)] hover:bg-[var(--fy-nav-active)]"
+            className="fy-menu-item relative z-[1] text-[var(--fy-text)]"
             onClick={(event) => {
               event.stopPropagation()
               onToggleRead()
@@ -85,7 +85,7 @@ export function ChapterReadControls({
           </button>
           <button
             type="button"
-            className="relative z-[1] block w-full px-3 py-2 text-left text-[var(--fy-text)] hover:bg-[var(--fy-nav-active)]"
+            className="fy-menu-item relative z-[1] text-[var(--fy-text)]"
             onClick={(event) => {
               event.stopPropagation()
               onMarkPrevious()

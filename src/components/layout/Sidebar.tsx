@@ -1,6 +1,7 @@
 import {
   Bookmark,
   Compass,
+  Download,
   History,
   Library,
   PanelLeft,
@@ -24,11 +25,10 @@ import {
 } from '@/components/ui/Sidebar'
 import { cn } from '@/lib/cn'
 
-// Downloads nav stays hidden until remote offline downloads ship.
 const items = [
-  { to: '/discover', label: 'Discover', icon: Compass },
   { to: '/library', label: 'Library', icon: Library },
-  // Downloads hidden until offline remote downloads ship.
+  { to: '/discover', label: 'Discover', icon: Compass },
+  { to: '/downloads', label: 'Downloads', icon: Download },
   { to: '/history', label: 'History', icon: History },
   { to: '/bookmarks', label: 'Bookmarks', icon: Bookmark },
   { to: '/sources', label: 'Sources', icon: Sparkles },
@@ -98,7 +98,10 @@ export function AppSidebar() {
                 const Icon = item.icon
                 const isActive =
                   location.pathname === item.to ||
-                  location.pathname.startsWith(`${item.to}/`)
+                  location.pathname.startsWith(`${item.to}/`) ||
+                  (item.to === '/library' &&
+                    (location.pathname === '/' ||
+                      location.pathname.startsWith('/title/')))
                 return (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
@@ -106,7 +109,7 @@ export function AppSidebar() {
                       isActive={isActive}
                       tooltip={item.label}
                     >
-                      <NavLink to={item.to}>
+                      <NavLink to={item.to} end={item.to === '/library'}>
                         <Icon />
                         <span>{item.label}</span>
                       </NavLink>
@@ -120,10 +123,15 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <div className="flex items-center gap-2 rounded-md px-2 py-2 text-[11px] text-sidebar-foreground/60 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-sidebar-primary" />
-          <span className="font-mono tracking-tight group-data-[collapsible=icon]:hidden">
-            Local library ready
+        <div className="rounded-md px-2 py-2 text-[11px] text-sidebar-foreground/60 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+          <div className="font-mono tracking-tight group-data-[collapsible=icon]:hidden">
+            Fyodor v0.3.0
+          </div>
+          <span
+            className="hidden font-brand text-sm leading-none group-data-[collapsible=icon]:inline"
+            title="Fyodor v0.3.0"
+          >
+            F
           </span>
         </div>
       </SidebarFooter>

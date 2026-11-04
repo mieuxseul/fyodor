@@ -11,6 +11,8 @@ import org.koitharu.kotatsu.parsers.model.RATING_UNKNOWN
 import org.koitharu.kotatsu.parsers.model.SortOrder
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.io.PrintWriter
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -25,6 +27,9 @@ fun main(args: Array<String>) {
 		System.err.println("Usage: kotatsu-bridge serve")
 		kotlin.system.exitProcess(2)
 	}
+	// Always speak UTF-8 on the wire — Windows defaults to a legacy code page and
+	// source titles (CJK, etc.) would break Rust's UTF-8 stdout reader otherwise.
+	val out = PrintWriter(OutputStreamWriter(System.out, Charsets.UTF_8), true)
 	val context = MangaLoaderContextImpl()
 	val reader = BufferedReader(InputStreamReader(System.`in`, Charsets.UTF_8))
 	while (true) {
@@ -38,8 +43,8 @@ fun main(args: Array<String>) {
 				.put("ok", false)
 				.put("error", t.message ?: t::class.java.simpleName)
 		}
-		println(response.toString())
-		System.out.flush()
+		out.println(response.toString())
+		out.flush()
 	}
 }
 

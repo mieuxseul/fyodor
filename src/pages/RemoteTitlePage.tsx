@@ -1,11 +1,20 @@
-import { ChevronLeft } from 'lucide-react'
+import { BarChart3, ChevronLeft, Sparkles, Wand2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { ChapterReadControls } from '@/components/ChapterReadControls'
 import { RemoteCover } from '@/components/RemoteCover'
+import { TitleSocialControls } from '@/components/social/TitleSocialControls'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { toast } from '@/components/ui/Toaster'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/Sheet'
 import {
   api,
   isTauri,
@@ -15,12 +24,26 @@ import {
 } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import {
+  markChaptersSeen,
+  recordKnownChapterCount,
+} from '@/lib/chapter-seen'
+import {
+  getTitleCategoryId,
+  listCategories,
+  setTitleCategory,
+  subscribeLibraryCategories,
+  type LibraryCategory,
+} from '@/lib/library-categories'
+import {
   loadRemoteProgress,
   markChapterRead,
   markChapterUnread,
   markPreviousRead,
   type RemoteProgressSnapshot,
 } from '@/lib/remote-progress'
+import { isIncognitoSession } from '@/lib/incognito'
+import { LIBRARY_OPENED_EVENT } from '@/lib/library-display'
+import { remoteSocialInput } from '@/lib/social-title'
 import { decodeKotatsuTitleId } from '@/source-network/providers/kotatsu'
 
 const PAGE_SIZE = 40
@@ -51,7 +74,18 @@ export function RemoteTitlePage() {
   const [chapterSort, setChapterSort] = useState<'asc' | 'desc'>('desc')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const [synopsisOpen, setSynopsisOpen] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(false)
+  const [categoryOpen, setCategoryOpen] = useState(false)
+  const [categories, setCategories] = useState<LibraryCategory[]>(() => listCategories())
+  const [activeCategoryId, setActiveCategoryId] = useState('reading')
   const [progress, setProgress] = useState<RemoteProgressSnapshot | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [offlineByRemoteId, setOfflineByRemoteId] = useState<Record<string, string>>({})
+  useEffect(
+    () => subscribeLibraryCategories(() => setCategories(listCategories())),
+    [],
+  )
 
   useEffect(() => {
     if (!SUPPORTED.has(providerId) || !titleId) {
@@ -62,6 +96,37 @@ export function RemoteTitlePage() {
     refresh()
     window.addEventListener('focus', refresh)
     return () => window.removeEventListener('focus', refresh)
+  }, [providerId, titleId])
+
+  useEffect(() => {
+    if (!isTauri() || (providerId !== 'atsu' && providerId !== 'mangadex') || !titleId) {
+      setOfflineByRemoteId({})
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const jobs = await api.listDownloads(500)
+        if (cancelled) return
+        const map: Record<string, string> = {}
+        for (const job of jobs) {
+          if (
+            job.status === 'completed' &&
+            job.providerId === providerId &&
+            job.providerTitleId === titleId &&
+            job.remoteChapterId
+          ) {
+            map[job.remoteChapterId] = job.id
+          }
+        }
+        setOfflineByRemoteId(map)
+      } catch {
+        if (!cancelled) setOfflineByRemoteId({})
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [providerId, titleId])
 
   useEffect(() => {
@@ -160,6 +225,21 @@ export function RemoteTitlePage() {
     }
   }, [providerId, titleId])
 
+  useEffect(() => {
+    if (!providerId || !titleId || chapters.length === 0) return
+    const count = Math.max(details?.chapterCount ?? 0, chapters.length)
+    recordKnownChapterCount(providerId, titleId, count)
+    markChaptersSeen(providerId, titleId, count)
+  }, [providerId, titleId, chapters, details?.chapterCount])
+
+  useEffect(() => {
+    if (!libraryRef?.inLibrary || !libraryRef.titleId || !isTauri()) return
+    if (isIncognitoSession()) return
+    void api.markTitleOpened(libraryRef.titleId).then(() => {
+      window.dispatchEvent(new Event(LIBRARY_OPENED_EVENT))
+    })
+  }, [libraryRef?.inLibrary, libraryRef?.titleId])
+
   const filteredChapters = useMemo(() => {
     const q = chapterQuery.trim().toLowerCase()
     let list = [...chapters]
@@ -196,28 +276,117 @@ export function RemoteTitlePage() {
       ? synopsisText
       : `${synopsisText.slice(0, SYNOPSIS_PREVIEW).replace(/\s+\S*$/, '')}…`
 
+  const canDownloadOffline = providerId === 'atsu' || providerId === 'mangadex'
+
+  async function downloadChapter(chapter: RemoteChapter) {
+    if (!details || !canDownloadOffline || !isTauri()) return
+    setDownloadingId(chapter.id)
+    setNotice(null)
+    setError(null)
+    try {
+      const job = await api.downloadRemoteChapter({
+        providerId,
+        providerName: details.providerName || providerId,
+        providerTitleId: titleId,
+        remoteChapterId: chapter.id,
+        chapterTitle: chapter.title,
+        primaryTitle: details.title,
+        coverUrl: details.coverUrl,
+        contentType: details.contentType,
+      })
+      if (job.status === 'completed' && job.remoteChapterId) {
+        setOfflineByRemoteId((prev) => ({ ...prev, [job.remoteChapterId!]: job.id }))
+      }
+      setNotice(
+        job.status === 'completed'
+          ? `Saved offline: ${chapter.title}. Open it from Downloads.`
+          : `Download ${job.status}.`,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+
+  async function deleteOfflineChapter(chapter: RemoteChapter) {
+    const downloadId = offlineByRemoteId[chapter.id]
+    if (!downloadId || !isTauri() || deletingId) return
+    if (
+      !window.confirm(
+        `Delete “${chapter.title}” from this device? Offline pages will be removed. You can download it again later.`,
+      )
+    ) {
+      return
+    }
+    setDeletingId(chapter.id)
+    setNotice(null)
+    setError(null)
+    try {
+      await api.deleteDownload(downloadId)
+      setOfflineByRemoteId((prev) => {
+        const next = { ...prev }
+        delete next[chapter.id]
+        return next
+      })
+      toast.success('Download deleted', { description: chapter.title })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setError(message)
+      toast.error('Couldn’t delete download', { description: message })
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   function openChapter(chapter: RemoteChapter) {
     navigate(`/reader/${providerId}:${titleId}?chapter=${encodeURIComponent(chapter.id)}`)
   }
 
-  async function toggleLibrary() {
+  function openLibraryCategorySheet() {
+    if (libraryRef?.inLibrary && libraryRef.titleId) {
+      setActiveCategoryId(getTitleCategoryId(libraryRef.titleId))
+    } else {
+      setActiveCategoryId('reading')
+    }
+    setCategoryOpen(true)
+  }
+
+  async function removeFromLibrary() {
+    if (!libraryRef?.inLibrary || !libraryRef.titleId || !isTauri()) return
+    setBusy(true)
+    setNotice(null)
+    setError(null)
+    try {
+      await api.removeFromLibrary(libraryRef.titleId)
+      setLibraryRef({
+        titleId: '',
+        editionId: '',
+        providerId,
+        providerTitleId: titleId,
+        inLibrary: false,
+      })
+      setCategoryOpen(false)
+      toast.success('Removed from library')
+      setNotice(null)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      toast.error('Couldn’t remove title', { description: message })
+      setError(message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function addOrMoveToCategory(categoryId: string) {
     if (!details || !isTauri()) return
     setBusy(true)
     setNotice(null)
     setError(null)
     try {
-      if (libraryRef?.inLibrary && libraryRef.titleId) {
-        await api.removeFromLibrary(libraryRef.titleId)
-        setLibraryRef({
-          titleId: '',
-          editionId: '',
-          providerId,
-          providerTitleId: titleId,
-          inLibrary: false,
-        })
-        setNotice('Removed from library.')
-      } else {
-        const ref = await api.addRemoteToLibrary({
+      let ref = libraryRef
+      if (!ref?.inLibrary) {
+        ref = await api.addRemoteToLibrary({
           providerId: details.providerId,
           providerName: details.providerName,
           providerTitleId: details.id,
@@ -236,10 +405,24 @@ export function RemoteTitlePage() {
           readingDirection: 'ltr',
         })
         setLibraryRef(ref)
-        setNotice('Added to library.')
       }
+      if (!ref?.titleId) throw new Error('Could not resolve library title')
+      const category = setTitleCategory(ref.titleId, categoryId)
+      setActiveCategoryId(categoryId)
+      if (category?.status) {
+        await api.updateTitle({ id: ref.titleId, status: category.status })
+      }
+      setCategoryOpen(false)
+      const wasInLibrary = Boolean(libraryRef?.inLibrary)
+      const message = wasInLibrary
+        ? `Moved to ${category?.name ?? 'library'}`
+        : `Added to ${category?.name ?? 'library'}`
+      toast.success(message, { description: details.title })
+      setNotice(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      toast.error('Couldn’t update library', { description: message })
+      setError(message)
     } finally {
       setBusy(false)
     }
@@ -296,6 +479,12 @@ export function RemoteTitlePage() {
   const startChapter = continueChapter ?? firstChapter ?? chapters[0] ?? null
   const hasProgress = Boolean(progress?.chapterId)
   const readChapterIds = new Set(progress?.readChapterIds ?? [])
+  const readCount = chapters.filter((c) => readChapterIds.has(c.id)).length
+  const statsPercent =
+    chapters.length > 0 ? Math.round((readCount / chapters.length) * 100) : 0
+  const suggestionsQuery = details.genres[0]
+    ? `${details.title} ${details.genres[0]}`
+    : details.title
   const metaBits = [
     details.providerName,
     details.contentType,
@@ -310,11 +499,11 @@ export function RemoteTitlePage() {
     <div className="pb-8">
       <button
         type="button"
-        onClick={() => navigate('/discover')}
+        onClick={() => navigate(libraryRef?.inLibrary ? '/library' : '/discover')}
         className="mb-5 inline-flex items-center gap-1 text-sm text-[var(--fy-text-muted)] transition hover:text-[var(--fy-text)]"
       >
         <ChevronLeft size={16} />
-        Discover
+        {libraryRef?.inLibrary ? 'Library' : 'Discover'}
       </button>
 
       {error ? <p className="mb-3 text-sm text-[var(--fy-danger)]">{error}</p> : null}
@@ -359,11 +548,65 @@ export function RemoteTitlePage() {
             <Button
               variant="outline"
               disabled={busy}
-              onClick={() => void toggleLibrary()}
+              onClick={openLibraryCategorySheet}
             >
-              {libraryRef?.inLibrary ? 'In library — remove' : 'Add to library'}
+              {libraryRef?.inLibrary ? 'Library category' : 'Add to library'}
             </Button>
           </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setStatsOpen(true)}>
+              <BarChart3 size={14} /> Statistics
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                navigate(`/suggestions?q=${encodeURIComponent(suggestionsQuery)}`)
+              }
+            >
+              <Wand2 size={14} /> Find similar
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!libraryRef?.inLibrary || !libraryRef.titleId}
+              onClick={() => {
+                if (libraryRef?.titleId) {
+                  navigate(`/title/${libraryRef.titleId}`)
+                }
+              }}
+              title={
+                libraryRef?.inLibrary
+                  ? 'Edit title and cover in your library copy'
+                  : 'Add to library to edit title and cover'
+              }
+            >
+              Edit
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() =>
+                navigate(`/suggestions?q=${encodeURIComponent(suggestionsQuery)}`)
+              }
+            >
+              <Sparkles size={14} /> Suggestions
+            </Button>
+          </div>
+
+          <TitleSocialControls
+            className="mt-4"
+            title={remoteSocialInput({
+              providerId: details.providerId,
+              providerTitleId: details.id,
+              primaryTitle: details.title,
+              coverPath: details.coverUrl,
+              author: details.author,
+              contentType: details.contentType,
+            })}
+          />
+
         </div>
       </section>
 
@@ -455,6 +698,27 @@ export function RemoteTitlePage() {
                         {chapter.pageCount}p
                       </span>
                     </button>
+                    {canDownloadOffline ? (
+                      offlineByRemoteId[chapter.id] ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy || deletingId === chapter.id || Boolean(deletingId)}
+                          onClick={() => void deleteOfflineChapter(chapter)}
+                        >
+                          {deletingId === chapter.id ? 'Deleting…' : 'Delete'}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy || downloadingId === chapter.id}
+                          onClick={() => void downloadChapter(chapter)}
+                        >
+                          {downloadingId === chapter.id ? 'Saving…' : 'Download'}
+                        </Button>
+                      )
+                    ) : null}
                     <ChapterReadControls
                       isRead={isRead}
                       onToggleRead={() => {
@@ -486,6 +750,87 @@ export function RemoteTitlePage() {
           </>
         )}
       </section>
+
+      <Sheet open={statsOpen} onOpenChange={setStatsOpen}>
+        <SheetContent side="bottom" className="rounded-t-2xl sm:mx-auto sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>Statistics</SheetTitle>
+            <SheetDescription>Local reading progress for this remote title.</SheetDescription>
+          </SheetHeader>
+          <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div className="fy-liquid-tile rounded-md p-3">
+              <dt className="text-xs text-[var(--fy-text-muted)]">Chapters</dt>
+              <dd className="mt-1 font-display text-2xl">{chapters.length}</dd>
+            </div>
+            <div className="fy-liquid-tile rounded-md p-3">
+              <dt className="text-xs text-[var(--fy-text-muted)]">Read</dt>
+              <dd className="mt-1 font-display text-2xl">{readCount}</dd>
+            </div>
+            <div className="fy-liquid-tile rounded-md p-3">
+              <dt className="text-xs text-[var(--fy-text-muted)]">Progress</dt>
+              <dd className="mt-1 font-display text-2xl">{statsPercent}%</dd>
+            </div>
+            <div className="fy-liquid-tile rounded-md p-3">
+              <dt className="text-xs text-[var(--fy-text-muted)]">Current</dt>
+              <dd className="mt-1 truncate text-sm font-medium">
+                {continueChapter?.title ?? '—'}
+              </dd>
+            </div>
+          </dl>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={categoryOpen} onOpenChange={setCategoryOpen}>
+        <SheetContent side="bottom" className="rounded-t-2xl sm:mx-auto sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>
+              {libraryRef?.inLibrary ? 'Library category' : 'Add to library'}
+            </SheetTitle>
+            <SheetDescription>
+              Choose where this title belongs — Reading, Finished, Dropped, or a custom category.
+            </SheetDescription>
+          </SheetHeader>
+          <ul className="mt-4 space-y-1">
+            {categories.map((cat) => {
+              const selected = activeCategoryId === cat.id && Boolean(libraryRef?.inLibrary)
+              return (
+                <li key={cat.id}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void addOrMoveToCategory(cat.id)}
+                    className={cn(
+                      'flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition',
+                      selected
+                        ? 'bg-[var(--fy-nav-active)] font-medium'
+                        : 'hover:bg-[var(--fy-nav-hover)]',
+                    )}
+                  >
+                    <span>{cat.name}</span>
+                    {selected ? (
+                      <span className="font-mono text-[10px] uppercase text-[var(--fy-text-muted)]">
+                        Current
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          {libraryRef?.inLibrary ? (
+            <div className="mt-4 border-t border-[var(--fy-border-subtle)] pt-3">
+              <Button
+                variant="danger"
+                className="w-full"
+                disabled={busy}
+                onClick={() => void removeFromLibrary()}
+              >
+                Remove from library
+              </Button>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
