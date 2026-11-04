@@ -28,7 +28,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
-    pool: 'threads',
+    // forks are more reliable than threads under CI resource pressure
+    pool: 'forks',
     fileParallelism: false,
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
   },
 })

@@ -34,6 +34,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Parsers are gitignored locally; CI clones + publishes them for the bridge shadowJar.
+      - name: Checkout kotatsu-parsers-redo
+        uses: actions/checkout@v4
+        with:
+          repository: Kotatsu-Redo/kotatsu-parsers-redo
+          path: sidecars/kotatsu-parsers-redo
+
+      - name: Publish parsers to mavenLocal
+        working-directory: sidecars/kotatsu-parsers-redo
+        shell: pwsh
+        run: .\gradlew.bat publishToMavenLocal --no-daemon
+
       - name: Build Kotatsu bridge jar
         working-directory: sidecars/kotatsu-bridge
         shell: pwsh

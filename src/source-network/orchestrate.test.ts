@@ -63,11 +63,11 @@ describe('searchProviders', () => {
       providers: [
         provider('slow', async (_query, options) => {
           await new Promise<void>((resolve, reject) => {
-            const timer = window.setTimeout(() => resolve(), 500)
+            const timer = setTimeout(() => resolve(), 500)
             options?.signal?.addEventListener(
               'abort',
               () => {
-                window.clearTimeout(timer)
+                clearTimeout(timer)
                 reject(new DOMException('Search cancelled', 'AbortError'))
               },
               { once: true },
