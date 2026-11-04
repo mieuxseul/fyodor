@@ -28,11 +28,19 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
-    // forks + undici blow up on GitHub ubuntu runners; threads + no isolate is stable
+    // CI Ubuntu runners flake when spawning Vitest workers (threads/forks).
+    // Run everything in a single thread — tests are tiny, so this is fine.
     pool: 'threads',
-    isolate: false,
     fileParallelism: false,
-    testTimeout: 15_000,
-    hookTimeout: 15_000,
+    maxWorkers: 1,
+    minWorkers: 1,
+    poolOptions: {
+      threads: {
+        singleThread: true,
+        isolate: false,
+      },
+    },
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
   },
 })
