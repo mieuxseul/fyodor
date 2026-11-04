@@ -93,7 +93,7 @@ export function SourcesPage() {
             <p className="mt-1 text-sm text-[var(--fy-text-muted)]">
               {kotatsuSources.length
                 ? `${kotatsuSources.length} catalog parsers · ${kotatsuEnabled.size} enabled for Discover`
-                : 'Requires the local bridge JAR (see README).'}
+                : 'Needs Java 17+ on this PC. The Kotatsu bridge ships with Fyodor installs.'}
             </p>
           </div>
           <input
@@ -109,7 +109,7 @@ export function SourcesPage() {
         ) : filteredKotatsu.length === 0 ? (
           <EmptyState
             title="No other sources"
-            description="Build the bridge JAR or adjust the filter."
+            description="Install Java 17+, reinstall Fyodor, or adjust the filter."
           />
         ) : (
           <>

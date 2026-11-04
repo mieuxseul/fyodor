@@ -31,6 +31,12 @@ pub fn run() {
                 )?;
             }
 
+            let resource_dir = app.path().resource_dir().ok();
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+            providers::kotatsu::configure_packaged_jar(resource_dir, exe_dir);
+
             let state = AppState::initialize(app.handle())?;
             app.manage(state);
             Ok(())

@@ -10,6 +10,8 @@ use crate::error::{AppError, AppResult};
 
 static BRIDGE: OnceLock<Mutex<Option<Bridge>>> = OnceLock::new();
 static SOURCES_CACHE: OnceLock<Mutex<Option<Vec<KotatsuSource>>>> = OnceLock::new();
+/// Resolved at app startup from the packaged resource dir (release installs).
+static PACKAGED_JAR: OnceLock<PathBuf> = OnceLock::new();
 
 struct Bridge {
     child: Child,
@@ -95,31 +97,77 @@ fn find_java() -> AppResult<PathBuf> {
     Ok(PathBuf::from(if cfg!(windows) { "java.exe" } else { "java" }))
 }
 
+/// Call once from app setup so release installs can find the bundled JAR.
+fn jar_looks_valid(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .map(|m| m.is_file() && m.len() >= 1_000_000)
+        .unwrap_or(false)
+}
+
+pub fn configure_packaged_jar(resource_dir: Option<PathBuf>, exe_dir: Option<PathBuf>) {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(dir) = resource_dir {
+        candidates.push(dir.join("resources").join("kotatsu-bridge.jar"));
+        candidates.push(dir.join("kotatsu-bridge.jar"));
+    }
+    if let Some(dir) = exe_dir {
+        candidates.push(dir.join("resources").join("kotatsu-bridge.jar"));
+        candidates.push(dir.join("kotatsu-bridge.jar"));
+        candidates.push(dir.join("kotatsu-bridge").join("kotatsu-bridge.jar"));
+    }
+    for c in candidates {
+        if jar_looks_valid(&c) {
+            let _ = PACKAGED_JAR.set(c);
+            return;
+        }
+    }
+}
+
 fn find_jar() -> AppResult<PathBuf> {
     if let Ok(path) = std::env::var("FYODOR_KOTATSU_BRIDGE") {
         let p = PathBuf::from(path);
-        if p.is_file() {
+        if jar_looks_valid(&p) {
             return Ok(p);
+        }
+    }
+    if let Some(p) = PACKAGED_JAR.get() {
+        if jar_looks_valid(p) {
+            return Ok(p.clone());
         }
     }
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let candidates = [
+        manifest.join("resources/kotatsu-bridge.jar"),
         manifest.join("../sidecars/bin/kotatsu-bridge.jar"),
         manifest.join("../sidecars/kotatsu-bridge/build/libs/kotatsu-bridge.jar"),
     ];
     for c in candidates {
-        if c.is_file() {
+        if jar_looks_valid(&c) {
             return Ok(c);
         }
     }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            for c in [
+                dir.join("resources").join("kotatsu-bridge.jar"),
+                dir.join("kotatsu-bridge.jar"),
+            ] {
+                if jar_looks_valid(&c) {
+                    return Ok(c);
+                }
+            }
+        }
+    }
     if let Ok(local) = std::env::var("LOCALAPPDATA") {
-        let p = PathBuf::from(local).join("FYODOR").join("kotatsu-bridge.jar");
-        if p.is_file() {
-            return Ok(p);
+        for name in ["Fyodor", "FYODOR"] {
+            let p = PathBuf::from(&local).join(name).join("kotatsu-bridge.jar");
+            if jar_looks_valid(&p) {
+                return Ok(p);
+            }
         }
     }
     Err(AppError::from(
-        "Kotatsu bridge JAR not found. Build sidecars/kotatsu-bridge (shadowJar) or set FYODOR_KOTATSU_BRIDGE.",
+        "Kotatsu bridge JAR not found. Reinstall the latest Fyodor release (Java 17+ required), or for local builds run the kotatsu-bridge shadowJar into src-tauri/resources/.",
     ))
 }
 

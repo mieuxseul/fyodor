@@ -149,10 +149,9 @@ export function LibraryPage() {
     const refresh = () => {
       void load()
     }
-    window.addEventListener('focus', refresh)
+    // Avoid full library reload on every window focus — that made cold/warm open feel slow.
     window.addEventListener(LIBRARY_OPENED_EVENT, refresh)
     return () => {
-      window.removeEventListener('focus', refresh)
       window.removeEventListener(LIBRARY_OPENED_EVENT, refresh)
     }
   }, [load])
@@ -578,7 +577,7 @@ export function LibraryPage() {
         </div>
       ) : null}
 
-      {!incognito ? <ContinueReadingRail /> : null}
+      {!incognito ? <ContinueReadingRail items={items} /> : null}
 
       {notice ? (
         <p className="mb-2.5 fy-liquid-tile px-2.5 py-1.5 text-xs">{notice}</p>

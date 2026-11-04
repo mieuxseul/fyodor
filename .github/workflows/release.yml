@@ -62,6 +62,11 @@ jobs:
           }
           New-Item -ItemType Directory -Force -Path ..\..\src-tauri\resources | Out-Null
           Copy-Item .\build\libs\kotatsu-bridge.jar ..\..\src-tauri\resources\kotatsu-bridge.jar -Force
+          $jar = Get-Item ..\..\src-tauri\resources\kotatsu-bridge.jar
+          if ($jar.Length -lt 1MB) {
+            throw "kotatsu-bridge.jar looks too small ($($jar.Length) bytes)"
+          }
+          Write-Host "Bundled Kotatsu bridge: $($jar.FullName) ($([math]::Round($jar.Length/1MB, 1)) MB)"
 
       - uses: dtolnay/rust-toolchain@stable
 

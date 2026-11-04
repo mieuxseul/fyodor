@@ -20,16 +20,20 @@ function resumeHref(item: LibraryItem): string {
 }
 
 function pickContinue(items: LibraryItem[]): LibraryItem | null {
-  // Already sorted by last_opened_at DESC from the API.
-  for (const item of items) {
+  const byRecent = [...items].sort((a, b) => {
+    const aAt = a.entry.lastOpenedAt ?? ''
+    const bAt = b.entry.lastOpenedAt ?? ''
+    return bAt.localeCompare(aAt)
+  })
+  for (const item of byRecent) {
     if (!item.entry.lastOpenedAt) continue
     if (item.progress?.completed || item.entry.status === 'completed') continue
     return item
   }
-  return items.find((item) => Boolean(item.entry.lastOpenedAt)) ?? null
+  return byRecent.find((item) => Boolean(item.entry.lastOpenedAt)) ?? null
 }
 
-export function ContinueReadingRail() {
+export function ContinueReadingRail({ items }: { items?: LibraryItem[] }) {
   const navigate = useNavigate()
   const [item, setItem] = useState<LibraryItem | null>(null)
 
@@ -38,27 +42,30 @@ export function ContinueReadingRail() {
       setItem(null)
       return
     }
+    // Prefer parent-provided library rows to avoid a second full listLibrary on open.
+    if (items) {
+      setItem(pickContinue(items))
+      return
+    }
     try {
       const list = await api.listLibrary({ status: 'all', sort: 'recent' })
       setItem(pickContinue(list))
     } catch {
       setItem(null)
     }
-  }, [])
+  }, [items])
 
   useEffect(() => {
     void load()
-    const onFocus = () => {
+    const onOpened = () => {
       void load()
     }
-    window.addEventListener('focus', onFocus)
-    window.addEventListener(LIBRARY_OPENED_EVENT, onFocus)
+    window.addEventListener(LIBRARY_OPENED_EVENT, onOpened)
     const unsub = subscribeIncognito(() => {
       void load()
     })
     return () => {
-      window.removeEventListener('focus', onFocus)
-      window.removeEventListener(LIBRARY_OPENED_EVENT, onFocus)
+      window.removeEventListener(LIBRARY_OPENED_EVENT, onOpened)
       unsub()
     }
   }, [load])
