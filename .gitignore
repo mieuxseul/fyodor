@@ -44,3 +44,7 @@ sidecars/bin/*.jar
 sidecars/kotatsu-bridge/.idea/
 sidecars/kotatsu-bridge/.kotlin/
 
+
+.tools/
+bridge-build.log
+
