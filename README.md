@@ -17,11 +17,7 @@ Discover and read manga, manhwa, comics, and local archives — easier than ever
 <a href="https://github.com/rickshank-rickdemption/fyodor/releases"><img alt="Release" src="https://img.shields.io/github/v/release/rickshank-rickdemption/fyodor?style=flat-square&label=release" /></a>
 <a href="https://github.com/rickshank-rickdemption/fyodor/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/rickshank-rickdemption/fyodor/total?style=flat-square&label=downloads" /></a>
 
-</div>
-
 <br />
-
-<div align="center">
 
 ## Download
 
@@ -33,71 +29,49 @@ Discover and read manga, manhwa, comics, and local archives — easier than ever
 
 *Requires Windows 10+ with WebView2. Prefer the NSIS setup (`Fyodor_*_x64-setup.exe`) for in-app updates.*
 
-</div>
-
 ---
-
-<div align="center">
 
 ## Features
 
-</div>
+Local library first — import CBZ, ZIP, and image folders
 
-- Local library first — import CBZ, ZIP, and image folders
-- Reading progress, history, and bookmarks across titles
-- Paged and vertical-scroll reader modes
-- Discover & read from enabled online sources
-- Built-in **MangaDex** + **Atsumaru**
-- Full **[Kotatsu-Redo](https://github.com/Kotatsu-Redo/kotatsu-parsers-redo)** catalog (~1385 sources) via optional GPL sidecar
-- Soft glass UI with compact library controls
+Reading progress, history, and bookmarks across titles
 
-Remote chapter downloads are off for now.
+Paged and vertical-scroll reader modes
+
+Discover & read from enabled online sources
+
+Built-in **MangaDex** + **Atsumaru**
+
+Large optional source catalog via a local Java sidecar
+
+Soft glass UI with compact library controls
+
+<br />
+
+*Remote chapter downloads are off for now.*
 
 ---
-
-<div align="center">
 
 ## Sources
 
-</div>
+**MangaDex** — Official API
 
-| Source | Notes |
-| --- | --- |
-| **MangaDex** | Official API |
-| **Atsumaru** | Unofficial site JSON (not affiliated) |
-| **Kotatsu** | [kotatsu-parsers-redo](https://github.com/Kotatsu-Redo/kotatsu-parsers-redo) — enable sites under **Sources → Kotatsu catalog** |
+**Atsumaru** — Unofficial site JSON (not affiliated)
 
-Kotatsu support uses a separate GPL-3.0 Java bridge (`sidecars/kotatsu-bridge`). Fyodor itself stays MIT; the bridge JAR is GPL because it links kotatsu-parsers-redo. A Java 17+ runtime is required for Kotatsu.
+**Extra catalog** — Optional community parsers (enable under **Sources**)
 
-<details>
-<summary><strong>Build the Kotatsu bridge (optional)</strong></summary>
+<br />
 
-Requires JDK 17+.
-
-```bash
-# once: publish parsers to local Maven
-cd sidecars/kotatsu-parsers-redo
-./gradlew publishToMavenLocal
-
-# build the shadow JAR
-cd ../kotatsu-bridge
-./gradlew shadowJar
-copy build/libs/kotatsu-bridge.jar ../bin/kotatsu-bridge.jar
-```
-
-Point `JAVA_HOME` at a JDK, or install under `%LOCALAPPDATA%\jdk-17`. Override the JAR with `FYODOR_KOTATSU_BRIDGE`.
-
-</details>
+Extra catalog support uses a separate GPL-3.0 Java bridge. Fyodor itself stays MIT. A Java 17+ runtime is required for that catalog.
 
 ---
-
-<div align="center">
 
 ## Contributing
 
 [Contributing guide](CONTRIBUTING.md)
 
-</div>
+<br />
 
 Pull requests are welcome. Keep them focused and easy to review — check out [CONTRIBUTING.md](CONTRIBUTING.md) before opening one.
 
@@ -105,15 +79,11 @@ Before filing a bug, skim existing issues and the latest [release notes](https:/
 
 ---
 
-<div align="center">
-
 ### Disclaimer
 
 The developer(s) of this application do not have any affiliation with the content providers available, and this application hosts zero content.
 
 ### License
-
-</div>
 
 ```
 Copyright © 2026 rickshank-rickdemption
@@ -121,8 +91,9 @@ Copyright © 2026 rickshank-rickdemption
 Fyodor is licensed under the MIT License.
 https://opensource.org/licenses/MIT
 
-The optional Kotatsu bridge (sidecars/kotatsu-bridge) and vendored
-kotatsu-parsers-redo sources are GPL-3.0.
+The optional Java source bridge is GPL-3.0.
 ```
 
 See [LICENSE](LICENSE) for the full MIT text.
+
+</div>
