@@ -1,6 +1,6 @@
 [package]
 name = "fyodor"
-version = "0.2.1"
+version = "0.2.2"
 description = "Fyodor — A library of worlds."
 authors = ["Fyodor"]
 edition = "2021"
