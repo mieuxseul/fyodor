@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { api, isTauri } from '@/lib/api'
 
+const ENABLED_SETTING = 'kotatsu_enabled_sources'
+
 type KotatsuSource = {
   id: string
   title: string
@@ -10,6 +12,17 @@ type KotatsuSource = {
   contentType: string
   broken: boolean
   domain?: string | null
+}
+
+async function loadEnabledIds(): Promise<string[]> {
+  const raw = await api.getSetting(ENABLED_SETTING)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 export function KotatsuCatalog() {
@@ -30,11 +43,17 @@ export function KotatsuCatalog() {
     setLoading(true)
     setError(null)
     try {
-      const [list, enabledIds] = await Promise.all([
-        api.kotatsuListSources(),
-        api.kotatsuGetEnabledSources(),
-      ])
-      setSources(list.sources ?? [])
+      const [list, enabledIds] = await Promise.all([api.kotatsuListSources(), loadEnabledIds()])
+      setSources(
+        list.map((s) => ({
+          id: s.name,
+          title: s.title || s.name,
+          locale: s.locale || 'other',
+          contentType: s.contentType || 'manga',
+          broken: Boolean(s.broken),
+          domain: s.domain,
+        })),
+      )
       setEnabled(new Set(enabledIds))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -71,7 +90,7 @@ export function KotatsuCatalog() {
     setSaving(true)
     setError(null)
     try {
-      await api.kotatsuSetEnabledSources([...next])
+      await api.setSetting(ENABLED_SETTING, JSON.stringify([...next]))
       setEnabled(next)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -98,78 +117,68 @@ export function KotatsuCatalog() {
               : 'Load the Kotatsu-Redo parser list via the local bridge jar.'}
           </p>
         </div>
-        <Button size="sm" variant="secondary" disabled={loading || saving} onClick={() => void refresh()}>
-          Refresh list
+        <Button variant="secondary" disabled={loading || saving} onClick={() => void refresh()}>
+          Refresh
         </Button>
       </div>
 
       {error ? <p className="mt-3 text-sm text-[var(--fy-danger)]">{error}</p> : null}
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         <input
-          className="min-w-[12rem] flex-1 rounded-md border border-[var(--fy-border-subtle)] bg-transparent px-3 py-2 text-sm"
-          placeholder="Filter by name, id, domain…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter sources…"
+          className="min-w-[12rem] flex-1 rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-3 py-1.5 text-sm"
         />
         <select
-          className="rounded-md border border-[var(--fy-border-subtle)] bg-transparent px-3 py-2 text-sm"
           value={locale}
           onChange={(e) => setLocale(e.target.value)}
+          className="rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-2 py-1.5 text-sm"
         >
           <option value="all">All locales</option>
-          {locales.map((item) => (
-            <option key={item} value={item}>
-              {item || 'other'}
+          {locales.map((l) => (
+            <option key={l} value={l}>
+              {l}
             </option>
           ))}
         </select>
       </div>
 
-      {loading ? (
-        <p className="mt-3 text-sm text-[var(--fy-text-muted)]">Loading Kotatsu sources…</p>
-      ) : (
-        <ul className="mt-3 max-h-80 space-y-1 overflow-auto pr-1">
-          {filtered.map((source) => {
-            const on = enabled.has(source.id)
-            return (
-              <li
-                key={source.id}
-                className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-[var(--fy-nav-active)]"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">
-                    {source.title}
-                    {source.broken ? (
-                      <span className="ml-2 text-[10px] uppercase text-[var(--fy-danger)]">
-                        broken
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="truncate font-mono text-[11px] text-[var(--fy-text-muted)]">
-                    {source.id}
-                    {source.domain ? ` · ${source.domain}` : ''}
-                    {source.locale ? ` · ${source.locale}` : ''}
-                  </div>
+      <ul className="mt-4 max-h-80 space-y-1 overflow-y-auto">
+        {loading ? (
+          <li className="text-sm text-[var(--fy-text-muted)]">Loading sources…</li>
+        ) : filtered.length === 0 ? (
+          <li className="text-sm text-[var(--fy-text-muted)]">No sources match.</li>
+        ) : (
+          filtered.map((source) => (
+            <li
+              key={source.id}
+              className="flex items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--fy-panel)]"
+            >
+              <input
+                type="checkbox"
+                checked={enabled.has(source.id)}
+                disabled={saving}
+                onChange={() => toggle(source.id)}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">
+                  {source.title}
+                  {source.broken ? (
+                    <span className="ml-2 text-[10px] uppercase text-[var(--fy-danger)]">broken</span>
+                  ) : null}
                 </div>
-                <Button
-                  size="sm"
-                  variant={on ? 'secondary' : 'primary'}
-                  disabled={saving}
-                  onClick={() => toggle(source.id)}
-                >
-                  {on ? 'On' : 'Off'}
-                </Button>
-              </li>
-            )
-          })}
-          {filtered.length === 0 ? (
-            <li className="py-6 text-center text-sm text-[var(--fy-text-muted)]">
-              No sources match this filter.
+                <div className="truncate font-mono text-[10px] text-[var(--fy-text-muted)]">
+                  {source.id}
+                  {source.domain ? ` · ${source.domain}` : ''}
+                  {` · ${source.locale}`}
+                </div>
+              </div>
             </li>
-          ) : null}
-        </ul>
-      )}
+          ))
+        )}
+      </ul>
     </section>
   )
 }

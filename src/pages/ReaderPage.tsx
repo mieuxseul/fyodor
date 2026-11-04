@@ -54,22 +54,6 @@ function parseRemoteEdition(
   return null
 }
 
-function parseKotatsuTitleId(titleId: string): { source: string; url: string } | null {
-  const idx = titleId.indexOf('::')
-  if (idx <= 0) return null
-  const source = titleId.slice(0, idx).trim()
-  const url = titleId.slice(idx + 2).trim()
-  return source && url ? { source, url } : null
-}
-
-function parseKotatsuChapterId(chapterId: string): { id: string; url: string } | null {
-  const idx = chapterId.indexOf('|||')
-  if (idx <= 0) return null
-  const id = chapterId.slice(0, idx).trim()
-  const url = chapterId.slice(idx + 3).trim()
-  return id && url ? { id, url } : null
-}
-
 function buildRemoteSession(
   provider: RemoteProvider,
   mangaId: string,
@@ -142,8 +126,6 @@ export function ReaderPage() {
   const [pagesError, setPagesError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [pagesLoading, setPagesLoading] = useState(false)
-  const [pagesError, setPagesError] = useState<string | null>(null)
-  const [pagesRateLimited, setPagesRateLimited] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -160,10 +142,6 @@ export function ReaderPage() {
     if (!session || !chapterId) return 0
     return Math.max(0, session.chapters.findIndex((c) => c.id === chapterId))
   }, [session, chapterId])
-
-  useEffect(() => {
-    sessionRef.current = session
-  }, [session])
 
   const persistProgress = useCallback(
     async (nextPage: number, scrollRatio = 0, completed = false) => {
@@ -227,65 +205,6 @@ export function ReaderPage() {
         })
     },
     [fetchChapterPages],
-  )
-
-  const fetchChapterPages = useCallback(
-    async (id: string): Promise<string[]> => {
-      if (remote?.provider === 'atsu') {
-        const data = await api.atsuChapterPages(remote.mangaId, id)
-        return data.pages
-      }
-      if (remote?.provider === 'mangadex') {
-        const data = await api.mangadexChapterPages(remote.mangaId, id)
-        return data.pages
-      }
-      if (remote?.provider === 'kotatsu') {
-        const parsedTitle = parseKotatsuTitleId(remote.mangaId)
-        const parsedChapter = parseKotatsuChapterId(id)
-        if (!parsedTitle || !parsedChapter) {
-          throw new Error('Invalid Kotatsu chapter reference.')
-        }
-        const data = await api.kotatsuChapterPages({
-          source: parsedTitle.source,
-          mangaUrl: parsedTitle.url,
-          chapterUrl: parsedChapter.url,
-          chapterId: parsedChapter.id,
-        })
-        return data.pages ?? []
-      }
-      const data = await api.getChapterPages(id)
-      return data.pages
-    },
-    [remote],
-  )
-
-  const warmResolvedPages = useCallback(async (rawPages: string[], fromIndex = 0) => {
-    const slice = rawPages.slice(fromIndex, fromIndex + 4)
-    const resolved = await Promise.all(
-      slice.map(async (path) => (await resolveRemoteImageUrl(path)) ?? toAssetUrl(path) ?? path),
-    )
-    prefetchImageUrls(resolved.filter(Boolean) as string[], 4)
-  }, [])
-
-  const prefetchAdjacentChapter = useCallback(
-    (currentChapterId: string) => {
-      const current = sessionRef.current
-      if (!current || !remote) return
-      const index = current.chapters.findIndex((c) => c.id === currentChapterId)
-      const next = current.chapters[index + 1]
-      if (!next) return
-
-      if (prefetchTimer.current) window.clearTimeout(prefetchTimer.current)
-      prefetchTimer.current = window.setTimeout(() => {
-        const key = chapterCacheKey(remote.provider, remote.mangaId, next.id)
-        void loadChapterPagesCached(key, () => fetchChapterPages(next.id))
-          .then((pages) => warmResolvedPages(pages, 0))
-          .catch(() => {
-            // Prefetch is best-effort; ignore rate limits here.
-          })
-      }, 800)
-    },
-    [remote, fetchChapterPages, warmResolvedPages],
   )
 
   const loadChapter = useCallback(
@@ -500,11 +419,6 @@ export function ReaderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (!pages.length) return
-    void warmResolvedPages(pages, pageIndex)
-  }, [pages, pageIndex, warmResolvedPages])
-
   const goPage = useCallback(
     (delta: number) => {
       setPageIndex((current) => {
@@ -695,11 +609,10 @@ export function ReaderPage() {
   }
 
   if (error || !session) {
-    const rateLimited = (error ?? '').toLowerCase().includes('rate')
     return (
       <div className="h-full bg-[var(--fy-reader-bg)]">
         <EmptyState
-          title={rateLimited ? 'Source is busy' : 'Unable to open reader'}
+          title="Unable to open reader"
           description={error ?? 'Edition unavailable.'}
           action={
             <div className="flex flex-wrap items-center justify-center gap-2">
@@ -759,9 +672,7 @@ export function ReaderPage() {
               className="min-w-0 flex-1 truncate fy-liquid-control px-2 py-1.5 text-xs outline-none focus:border-[var(--fy-border)]"
               value={chapterId ?? ''}
               disabled={pagesLoading}
-              onChange={(e) => {
-                void loadChapter(e.target.value, 0).catch(() => undefined)
-              }}
+              onChange={(e) => void loadChapter(e.target.value, 0)}
               aria-label="Select chapter"
             >
               {session.chapters.map((item) => (
@@ -962,36 +873,6 @@ export function ReaderPage() {
         ) : pagesLoading ? (
           <div className="flex h-full items-center justify-center">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--fy-border)] border-t-[var(--fy-text)]" />
-            <p className="text-xs text-[var(--fy-text-muted)]">Loading pages…</p>
-          </div>
-        ) : pagesError ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-            <p className="max-w-md text-sm text-[var(--fy-text)]">{pagesError}</p>
-            {pagesRateLimited ? (
-              <p className="max-w-sm text-xs text-[var(--fy-text-muted)]">
-                Sources like MangaDex throttle bursts. Prefetch will retry quietly in the
-                background after a pause.
-              </p>
-            ) : null}
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <Button
-                variant="outline"
-                disabled={!chapterId || pagesLoading}
-                onClick={() => {
-                  if (!chapterId) return
-                  void loadChapter(chapterId, pageIndex).catch(() => undefined)
-                }}
-              >
-                Try again
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={chapterIndex >= session.chapters.length - 1 || pagesLoading}
-                onClick={() => void goChapter(1)}
-              >
-                Next chapter
-              </Button>
-            </div>
           </div>
         ) : mode === 'vertical' ? (
           <div
@@ -1133,27 +1014,17 @@ function ReaderPageImage({
     return () => {
       cancelled = true
     }
-  }, [path, retryToken])
+  }, [path])
 
   if (failed) {
     return (
       <div
         className={cn(
-          'flex min-h-[120px] flex-col items-center justify-center gap-2 text-sm text-[var(--fy-text-muted)]',
+          'flex min-h-[120px] items-center justify-center text-sm text-[var(--fy-text-muted)]',
           className,
         )}
       >
-        <span>Unable to load page image</span>
-        <button
-          type="button"
-          className="rounded-md border border-[var(--fy-border-subtle)] px-2 py-1 text-xs text-[var(--fy-text)] hover:bg-[var(--fy-nav-active)]"
-          onClick={() => {
-            setFailed(false)
-            setRetryToken((n) => n + 1)
-          }}
-        >
-          Retry image
-        </button>
+        Unable to load page image
       </div>
     )
   }

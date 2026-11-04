@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { PageHeader } from '@/components/layout/PageHeader'
-import { KotatsuCatalog } from '@/components/sources/KotatsuCatalog'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { api } from '@/lib/api'
@@ -139,7 +138,7 @@ export function SourcesPage() {
     <div>
       <PageHeader
         title="Sources"
-        subtitle="Provider registry and health. Kotatsu-Redo’s full parser catalog is managed below; Discover only queries sources you enable."
+        subtitle="Fyodor Source Network — provider registry, capabilities, and health. Official providers credit their hosts; downloads and in-app online reading stay disabled until explicitly authorized."
         actions={
           <Button
             variant="secondary"
