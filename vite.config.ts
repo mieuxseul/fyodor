@@ -28,18 +28,12 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
-    // CI Ubuntu runners flake when spawning Vitest workers (threads/forks).
-    // Run everything in a single thread — tests are tiny, so this is fine.
+    // Vitest 5: singleThread → maxWorkers:1 + isolate:false (no poolOptions).
+    // Keeps CI from dying on worker-pool startup before any assertions run.
     pool: 'threads',
     fileParallelism: false,
     maxWorkers: 1,
-    minWorkers: 1,
-    poolOptions: {
-      threads: {
-        singleThread: true,
-        isolate: false,
-      },
-    },
+    isolate: false,
     testTimeout: 20_000,
     hookTimeout: 20_000,
   },
