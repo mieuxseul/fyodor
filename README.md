@@ -41,8 +41,6 @@ Paged and vertical-scroll reader modes
 
 Discover & read from enabled online sources
 
-Built-in **MangaDex** + **Atsumaru**
-
 Large optional source catalog via a local Java sidecar
 
 Soft glass UI with compact library controls
