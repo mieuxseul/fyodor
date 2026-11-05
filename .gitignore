@@ -18,6 +18,7 @@ sidecars/kotatsu-bridge/build
 sidecars/kotatsu-bridge/.kotlin
 sidecars/*.jar
 src-tauri/resources/*.jar
+src-tauri/resources/jre/
 *.jar
 !sidecars/kotatsu-bridge/gradle/wrapper/gradle-wrapper.jar
 release/

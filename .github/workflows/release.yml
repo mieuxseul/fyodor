@@ -68,6 +68,31 @@ jobs:
           }
           Write-Host "Bundled Kotatsu bridge: $($jar.FullName) ($([math]::Round($jar.Length/1MB, 1)) MB)"
 
+      # Portable JRE so Other sources work with zero Java setup on user PCs.
+      - name: Bundle portable Temurin JRE 17
+        shell: pwsh
+        run: |
+          $out = "src-tauri\resources\jre"
+          $zip = Join-Path $env:RUNNER_TEMP "temurin-jre17.zip"
+          $extract = Join-Path $env:RUNNER_TEMP "temurin-jre17"
+          $url = "https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse?project=jdk"
+          Write-Host "Downloading Temurin JRE 17…"
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+          $root = Get-ChildItem $extract | Where-Object { $_.PSIsContainer } | Select-Object -First 1
+          if (-not $root) { throw "Temurin zip had no top-level directory" }
+          if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item -Path (Join-Path $root.FullName "*") -Destination $out -Recurse -Force
+          $java = Join-Path $out "bin\java.exe"
+          if (-not (Test-Path $java)) { throw "Bundled JRE missing bin\java.exe" }
+          $javaItem = Get-Item $java
+          if ($javaItem.Length -lt 8KB) { throw "Bundled java.exe looks too small ($($javaItem.Length) bytes)" }
+          & $java -version
+          $sizeMb = [math]::Round(((Get-ChildItem $out -Recurse -File | Measure-Object Length -Sum).Sum) / 1MB, 1)
+          Write-Host "Bundled portable JRE at $out ($sizeMb MB)"
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2

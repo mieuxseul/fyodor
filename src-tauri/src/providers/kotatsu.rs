@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
@@ -12,12 +12,64 @@ static BRIDGE: OnceLock<Mutex<Option<Bridge>>> = OnceLock::new();
 static SOURCES_CACHE: OnceLock<Mutex<Option<Vec<KotatsuSource>>>> = OnceLock::new();
 /// Resolved at app startup from the packaged resource dir (release installs).
 static PACKAGED_JAR: OnceLock<PathBuf> = OnceLock::new();
+/// Bundled portable JRE (release installs) — users should not need a system JDK.
+static PACKAGED_JAVA: OnceLock<PathBuf> = OnceLock::new();
 
 struct Bridge {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<std::process::ChildStdout>,
+    stderr: BufReader<std::process::ChildStderr>,
     next_id: u64,
+}
+
+const USER_BRIDGE_HINT: &str =
+    "Other sources couldn’t start. Tap Reload catalog. If it still fails, reinstall Fyodor.";
+
+fn java_bin_name() -> &'static str {
+    if cfg!(windows) {
+        "java.exe"
+    } else {
+        "java"
+    }
+}
+
+fn java_looks_valid(path: &Path) -> bool {
+    // Ignore build.rs placeholders (empty / tiny stubs). Real Temurin java.exe is tens of KB+.
+    std::fs::metadata(path)
+        .map(|m| m.is_file() && m.len() >= 8_000)
+        .unwrap_or(false)
+}
+
+fn java_runs(path: &Path) -> bool {
+    let mut cmd = Command::new(path);
+    cmd.arg("-version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.status().map(|s| s.success()).unwrap_or(false)
+}
+
+fn java_candidate_paths(resource_dir: Option<&Path>, exe_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let bin = java_bin_name();
+    for dir in [resource_dir, exe_dir].into_iter().flatten() {
+        candidates.push(dir.join("resources").join("jre").join("bin").join(bin));
+        candidates.push(dir.join("jre").join("bin").join(bin));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("resources").join("jre").join("bin").join(bin));
+            candidates.push(dir.join("jre").join("bin").join(bin));
+        }
+    }
+    candidates
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,27 +126,48 @@ fn bridge_slot() -> &'static Mutex<Option<Bridge>> {
 }
 
 fn find_java() -> AppResult<PathBuf> {
+    if let Ok(path) = std::env::var("FYODOR_JAVA") {
+        let p = PathBuf::from(path);
+        if java_looks_valid(&p) && java_runs(&p) {
+            return Ok(p);
+        }
+    }
+    if let Some(p) = PACKAGED_JAVA.get() {
+        if java_looks_valid(p) && java_runs(p) {
+            return Ok(p.clone());
+        }
+    }
+    for c in java_candidate_paths(None, None) {
+        if java_looks_valid(&c) && java_runs(&c) {
+            return Ok(c);
+        }
+    }
     if let Ok(home) = std::env::var("JAVA_HOME") {
-        let candidate = PathBuf::from(home).join("bin").join(if cfg!(windows) {
-            "java.exe"
-        } else {
-            "java"
-        });
-        if candidate.is_file() {
+        let candidate = PathBuf::from(home).join("bin").join(java_bin_name());
+        if java_looks_valid(&candidate) && java_runs(&candidate) {
             return Ok(candidate);
         }
     }
     for key in ["LOCALAPPDATA", "USERPROFILE"] {
         if let Ok(base) = std::env::var(key) {
-            for rel in ["jdk-17\\bin\\java.exe", "jdk-21\\bin\\java.exe"] {
+            for rel in [
+                "jdk-17\\bin\\java.exe",
+                "jdk-21\\bin\\java.exe",
+                "Java\\jdk-17\\bin\\java.exe",
+                "Java\\jdk-21\\bin\\java.exe",
+            ] {
                 let candidate = PathBuf::from(&base).join(rel);
-                if candidate.is_file() {
+                if java_looks_valid(&candidate) && java_runs(&candidate) {
                     return Ok(candidate);
                 }
             }
         }
     }
-    Ok(PathBuf::from(if cfg!(windows) { "java.exe" } else { "java" }))
+    let path_java = PathBuf::from(java_bin_name());
+    if java_runs(&path_java) {
+        return Ok(path_java);
+    }
+    Err(AppError::from(USER_BRIDGE_HINT))
 }
 
 /// Call once from app setup so release installs can find the bundled JAR.
@@ -106,11 +179,11 @@ fn jar_looks_valid(path: &Path) -> bool {
 
 pub fn configure_packaged_jar(resource_dir: Option<PathBuf>, exe_dir: Option<PathBuf>) {
     let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Some(dir) = resource_dir {
+    if let Some(dir) = resource_dir.as_ref() {
         candidates.push(dir.join("resources").join("kotatsu-bridge.jar"));
         candidates.push(dir.join("kotatsu-bridge.jar"));
     }
-    if let Some(dir) = exe_dir {
+    if let Some(dir) = exe_dir.as_ref() {
         candidates.push(dir.join("resources").join("kotatsu-bridge.jar"));
         candidates.push(dir.join("kotatsu-bridge.jar"));
         candidates.push(dir.join("kotatsu-bridge").join("kotatsu-bridge.jar"));
@@ -118,6 +191,16 @@ pub fn configure_packaged_jar(resource_dir: Option<PathBuf>, exe_dir: Option<Pat
     for c in candidates {
         if jar_looks_valid(&c) {
             let _ = PACKAGED_JAR.set(c);
+            break;
+        }
+    }
+    configure_packaged_java(resource_dir, exe_dir);
+}
+
+fn configure_packaged_java(resource_dir: Option<PathBuf>, exe_dir: Option<PathBuf>) {
+    for c in java_candidate_paths(resource_dir.as_deref(), exe_dir.as_deref()) {
+        if java_looks_valid(&c) {
+            let _ = PACKAGED_JAVA.set(c);
             return;
         }
     }
@@ -166,9 +249,13 @@ fn find_jar() -> AppResult<PathBuf> {
             }
         }
     }
-    Err(AppError::from(
-        "Kotatsu bridge JAR not found. Reinstall the latest Fyodor release (Java 17+ required), or for local builds run the kotatsu-bridge shadowJar into src-tauri/resources/.",
-    ))
+    Err(AppError::from(USER_BRIDGE_HINT))
+}
+
+fn drain_stderr(bridge: &mut Bridge) -> String {
+    let mut buf = String::new();
+    let _ = bridge.stderr.read_to_string(&mut buf);
+    buf.trim().chars().take(400).collect()
 }
 
 fn spawn_bridge() -> AppResult<Bridge> {
@@ -189,7 +276,7 @@ fn spawn_bridge() -> AppResult<Bridge> {
     .arg("serve")
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
-    .stderr(Stdio::null());
+    .stderr(Stdio::piped());
 
     // Hide the JDK console window on Windows (java.exe is a console subsystem binary).
     #[cfg(windows)]
@@ -201,19 +288,24 @@ fn spawn_bridge() -> AppResult<Bridge> {
 
     let mut child = cmd
         .spawn()
-        .map_err(|e| AppError::from(format!("Failed to start Kotatsu bridge ({java:?}): {e}")))?;
+        .map_err(|_| AppError::from(USER_BRIDGE_HINT))?;
     let stdin = child
         .stdin
         .take()
-        .ok_or_else(|| AppError::from("Kotatsu bridge stdin missing"))?;
+        .ok_or_else(|| AppError::from(USER_BRIDGE_HINT))?;
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| AppError::from("Kotatsu bridge stdout missing"))?;
+        .ok_or_else(|| AppError::from(USER_BRIDGE_HINT))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| AppError::from(USER_BRIDGE_HINT))?;
     Ok(Bridge {
         child,
         stdin,
         stdout: BufReader::new(stdout),
+        stderr: BufReader::new(stderr),
         next_id: 1,
     })
 }
@@ -271,15 +363,18 @@ fn request(bridge: &mut Bridge, mut body: Value) -> AppResult<Value> {
 
     let response_line = read_bridge_line(&mut bridge.stdout)?;
     if response_line.is_empty() {
-        return Err(AppError::from("Kotatsu bridge closed unexpectedly"));
+        let _ = bridge.child.kill();
+        let _ = bridge.child.wait();
+        let _stderr = drain_stderr(bridge);
+        return Err(AppError::from(USER_BRIDGE_HINT));
     }
     let value: Value = serde_json::from_str(response_line.trim())
-        .map_err(|e| AppError::from(format!("Kotatsu bridge JSON error: {e}")))?;
+        .map_err(|_| AppError::from(USER_BRIDGE_HINT))?;
     if value.get("ok").and_then(|v| v.as_bool()) != Some(true) {
         let err = value
             .get("error")
             .and_then(|v| v.as_str())
-            .unwrap_or("Kotatsu bridge error");
+            .unwrap_or(USER_BRIDGE_HINT);
         return Err(AppError::from(err.to_string()));
     }
     Ok(value)

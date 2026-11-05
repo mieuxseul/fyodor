@@ -518,6 +518,7 @@
     justify-content: flex-start !important;
     pointer-events: none !important;
     --width: auto !important;
+    font-family: var(--font-sans) !important;
   }
 
   [data-sonner-toaster].fy-toaster [data-sonner-toast] {
@@ -530,6 +531,12 @@
     margin: 0 auto 0.5rem !important;
     transform: none !important;
     pointer-events: auto !important;
+    font-family: var(--font-sans) !important;
+  }
+
+  [data-sonner-toaster].fy-toaster [data-title],
+  [data-sonner-toaster].fy-toaster [data-description] {
+    font-family: var(--font-sans) !important;
   }
 
   [data-sonner-toast] {

@@ -33,7 +33,21 @@ export function SourcesPage() {
       setKotatsuEnabled(new Set(enabled))
       setKotatsuVisible(80)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const raw = err instanceof Error ? err.message : String(err)
+      const lower = raw.toLowerCase()
+      // Never dump JVM / path / JAR jargon at non-technical users.
+      if (
+        lower.includes('java') ||
+        lower.includes('bridge') ||
+        lower.includes('jar') ||
+        lower.includes('kotatsu')
+      ) {
+        setError(
+          'Other sources couldn’t start. Tap Reload catalog. If it still fails, reinstall Fyodor.',
+        )
+      } else {
+        setError(raw)
+      }
     } finally {
       setKotatsuLoading(false)
     }
@@ -72,7 +86,7 @@ export function SourcesPage() {
     <div>
       <PageHeader
         title="Sources"
-        subtitle="Enable catalog parsers for Discover. MangaDex and Atsumaru stay available automatically."
+        subtitle="Turn on extra catalogs for Discover. MangaDex and Atsumaru stay available automatically."
         actions={
           <Button
             variant="secondary"
@@ -92,8 +106,8 @@ export function SourcesPage() {
             <h2 className="text-lg font-semibold tracking-tight">Other sources</h2>
             <p className="mt-1 text-sm text-[var(--fy-text-muted)]">
               {kotatsuSources.length
-                ? `${kotatsuSources.length} catalog parsers · ${kotatsuEnabled.size} enabled for Discover`
-                : 'Needs Java 17+ on this PC. The Kotatsu bridge ships with Fyodor installs.'}
+                ? `${kotatsuSources.length} catalogs · ${kotatsuEnabled.size} enabled for Discover`
+                : 'Extra catalogs included with Fyodor — no extra setup.'}
             </p>
           </div>
           <input
@@ -109,7 +123,11 @@ export function SourcesPage() {
         ) : filteredKotatsu.length === 0 ? (
           <EmptyState
             title="No other sources"
-            description="Install Java 17+, reinstall Fyodor, or adjust the filter."
+            description={
+              error
+                ? 'Try Reload catalog, or reinstall Fyodor.'
+                : 'Nothing matches this filter.'
+            }
           />
         ) : (
           <>

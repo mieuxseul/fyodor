@@ -25,12 +25,12 @@ export function Toaster({ ...props }: ToasterProps) {
         unstyled: true,
         classNames: {
           toast: cn(
-            'fy-liquid-menu pointer-events-auto flex w-max max-w-[min(90vw,22rem)] items-center justify-center gap-2 rounded-xl px-3.5 py-2.5 text-sm shadow-lg',
+            'fy-liquid-menu pointer-events-auto flex w-max max-w-[min(90vw,22rem)] items-center justify-center gap-2 rounded-xl px-3.5 py-2.5 font-sans text-sm shadow-lg',
             'data-[type=success]:text-[var(--fy-text)]',
             'data-[type=error]:text-[var(--fy-danger)]',
           ),
-          title: 'text-[13px] font-medium leading-snug',
-          description: 'text-xs text-[var(--fy-text-muted)]',
+          title: 'font-sans text-[13px] font-medium leading-snug',
+          description: 'font-sans text-xs text-[var(--fy-text-muted)]',
         },
       }}
       {...props}
