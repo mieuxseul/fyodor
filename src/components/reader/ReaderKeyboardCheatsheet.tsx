@@ -9,21 +9,28 @@ import {
 interface ReaderKeyboardCheatsheetProps {
   open: boolean
   onClose: () => void
+  /** Offset for the reader chrome so the dialog stays centered in the page area. */
+  insetLeft?: number
 }
 
-export function ReaderKeyboardCheatsheet({ open, onClose }: ReaderKeyboardCheatsheetProps) {
+export function ReaderKeyboardCheatsheet({
+  open,
+  onClose,
+  insetLeft = 20,
+}: ReaderKeyboardCheatsheetProps) {
   if (!open) return null
 
   return (
     <div
-      className="absolute inset-0 z-40 flex items-center justify-center bg-black/45 px-4 pl-[304px]"
+      className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 px-4 backdrop-blur-2xl"
+      style={{ paddingLeft: Math.max(insetLeft, 16) }}
       role="dialog"
       aria-modal="true"
       aria-label="Keyboard shortcuts"
       onClick={onClose}
     >
       <div
-        className="fy-liquid-glass fy-reader-glass relative w-full max-w-md overflow-hidden rounded-[24px]"
+        className="fy-liquid-glass fy-reader-glass fy-reader-cheatsheet relative w-full max-w-md overflow-hidden rounded-[24px]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="relative z-[1] flex items-center justify-between border-b border-[var(--fy-border-subtle)] px-4 py-3">

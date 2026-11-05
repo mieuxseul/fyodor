@@ -9,6 +9,9 @@ import {
   Keyboard,
   Maximize2,
   Minimize2,
+  PanelLeft,
+  Pause,
+  Play,
   Settings2,
   SlidersHorizontal,
   X,
@@ -30,7 +33,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Select } from '@/components/ui/Select'
 import { api, isTauri, resolveRemoteImageUrl, toAssetUrl, toFyodorCdnUrl } from '@/lib/api'
 import { cn } from '@/lib/cn'
-import { FULLSCREEN_EVENT } from '@/hooks/useF11Fullscreen'
+import { FULLSCREEN_EVENT, setWindowFullscreen } from '@/hooks/useF11Fullscreen'
 import {
   isIncognitoSession,
   setIncognitoSession,
@@ -147,6 +150,10 @@ export function ReaderPage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  /** Reader chrome starts collapsed so the page is immersive by default. */
+  const [panelCollapsed, setPanelCollapsed] = useState(true)
+  const [autoScroll, setAutoScroll] = useState(false)
+  const [autoScrollSpeed, setAutoScrollSpeed] = useState(42)
   const [error, setError] = useState<string | null>(null)
   const [pagesError, setPagesError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -158,11 +165,25 @@ export function ReaderPage() {
   const saveTimer = useRef<number | null>(null)
   const pageCacheRef = useRef(new Map<string, string[]>())
   const prefetchingRef = useRef(new Set<string>())
+  const advancingChapterRef = useRef(false)
+  const autoScrollPausedRef = useRef(false)
+  const autoScrollResumeTimerRef = useRef<number | null>(null)
   const loadChapterRef = useRef<(id: string, restorePage?: number) => Promise<void>>(
     async () => undefined,
   )
   const chapterQueryOnOpenRef = useRef<string | null>(searchParams.get('chapter'))
   const chapterIdRef = useRef<string | null>(null)
+
+  function pauseAutoScrollBriefly(ms = 2200) {
+    autoScrollPausedRef.current = true
+    if (autoScrollResumeTimerRef.current) {
+      window.clearTimeout(autoScrollResumeTimerRef.current)
+    }
+    autoScrollResumeTimerRef.current = window.setTimeout(() => {
+      autoScrollPausedRef.current = false
+      autoScrollResumeTimerRef.current = null
+    }, ms)
+  }
   const chapterIndex = useMemo(() => {
     if (!session || !chapterId) return 0
     return Math.max(0, session.chapters.findIndex((c) => c.id === chapterId))
@@ -461,41 +482,13 @@ export function ReaderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const goPage = useCallback(
-    (delta: number) => {
-      // ±1 from chrome/keyboard means one spread in double-page mode.
-      const moved =
-        Math.abs(delta) === 1 ? Math.sign(delta) * pageStepForMode(mode) : delta
-      setPageIndex((current) => {
-        const last = Math.max(pages.length - 1, 0)
-        const next = Math.min(Math.max(current + moved, 0), last)
-        if (next !== current) {
-          const completed = next >= last && last > 0
-          queueMicrotask(() => {
-            void persistProgress(next, 0, completed)
-          })
-        }
-        return next
-      })
-    },
-    [pages.length, persistProgress, mode],
-  )
-
-  useEffect(() => {
-    if (mode === 'vertical' || pages.length === 0) return
-    const lookAhead = mode === 'double' ? [0, 1, 2, 3, -1, -2] : [-1, 0, 1, 2]
-    for (const offset of lookAhead) {
-      const path = pages[pageIndex + offset]
-      if (path) preloadPageImage(path)
-    }
-  }, [mode, pages, pageIndex])
-
   const goChapter = useCallback(
     async (delta: number) => {
-      if (!session) return
+      if (!session || advancingChapterRef.current) return
       const leavingId = chapterId
       const next = session.chapters[chapterIndex + delta]
       if (!next) return
+      advancingChapterRef.current = true
       try {
         if (leavingId && delta > 0) {
           if (remote) {
@@ -510,12 +503,83 @@ export function ReaderPage() {
         }
         await loadChapter(next.id, 0)
         await persistProgress(0)
+        if (scrollRef.current) scrollRef.current.scrollTop = 0
       } catch {
         /* pagesError already set */
+      } finally {
+        advancingChapterRef.current = false
       }
     },
     [session, chapterIndex, chapterId, loadChapter, persistProgress, remote, editionId],
   )
+
+  const goPage = useCallback(
+    (delta: number) => {
+      // ±1 from chrome/keyboard means one spread in double-page mode.
+      const moved =
+        Math.abs(delta) === 1 ? Math.sign(delta) * pageStepForMode(mode) : delta
+      setPageIndex((current) => {
+        const last = Math.max(pages.length - 1, 0)
+        // Past the last page / spread → open the next chapter automatically.
+        if (moved > 0 && current + moved > last) {
+          queueMicrotask(() => {
+            void goChapter(1)
+          })
+          return current
+        }
+        const next = Math.min(Math.max(current + moved, 0), last)
+        if (next !== current) {
+          const completed = next >= last && last > 0
+          queueMicrotask(() => {
+            void persistProgress(next, 0, completed)
+          })
+        }
+        return next
+      })
+    },
+    [pages.length, persistProgress, mode, goChapter],
+  )
+
+  useEffect(() => {
+    if (mode === 'vertical' || pages.length === 0) return
+    const lookAhead = mode === 'double' ? [0, 1, 2, 3, -1, -2] : [-1, 0, 1, 2]
+    for (const offset of lookAhead) {
+      const path = pages[pageIndex + offset]
+      if (path) preloadPageImage(path)
+    }
+  }, [mode, pages, pageIndex])
+
+  // Slow continuous scroll for webtoon / vertical mode.
+  useEffect(() => {
+    if (mode !== 'vertical' || !autoScroll || pagesLoading || pages.length === 0) return
+    let frame = 0
+    let last = performance.now()
+    const tick = (now: number) => {
+      frame = window.requestAnimationFrame(tick)
+      if (autoScrollPausedRef.current || advancingChapterRef.current) {
+        last = now
+        return
+      }
+      const el = scrollRef.current
+      if (!el) return
+      const dt = Math.min(0.05, (now - last) / 1000)
+      last = now
+      const maxScroll = el.scrollHeight - el.clientHeight
+      if (maxScroll <= 0) return
+      if (el.scrollTop >= maxScroll - 1) return
+      el.scrollTop += autoScrollSpeed * dt
+    }
+    frame = window.requestAnimationFrame(tick)
+    return () => window.cancelAnimationFrame(frame)
+  }, [mode, autoScroll, autoScrollSpeed, pagesLoading, pages.length, chapterId])
+
+  useEffect(() => {
+    return () => {
+      if (autoScrollResumeTimerRef.current) {
+        window.clearTimeout(autoScrollResumeTimerRef.current)
+      }
+    }
+  }, [])
 
   function backTarget() {
     if (remote) return `/remote/${remote.provider}/${remote.mangaId}`
@@ -594,13 +658,32 @@ export function ReaderPage() {
           break
         case ',':
           event.preventDefault()
+          setPanelCollapsed(false)
           setSettingsOpen(true)
           setStyleOpen(false)
           setFitOpen(false)
           break
         case 'Escape':
-          if (fullscreen) void toggleFullscreen(false)
-          else navigate(backTarget())
+          event.preventDefault()
+          void (async () => {
+            try {
+              if (isTauri() && (await getCurrentWindow().isFullscreen())) {
+                await toggleFullscreen(false)
+                return
+              }
+            } catch {
+              /* fall through */
+            }
+            if (fullscreen) {
+              await toggleFullscreen(false)
+              return
+            }
+            if (!panelCollapsed) {
+              setPanelCollapsed(true)
+              return
+            }
+            navigate(backTarget())
+          })()
           break
         default:
           break
@@ -620,17 +703,24 @@ export function ReaderPage() {
     isRemote,
     session,
     cheatsheetOpen,
+    panelCollapsed,
   ])
 
   async function toggleFullscreen(force?: boolean) {
     if (!isTauri()) return
     const win = getCurrentWindow()
     const next = force ?? !(await win.isFullscreen())
-    await win.setFullscreen(next)
+    await setWindowFullscreen(next)
     setFullscreen(next)
   }
 
   useEffect(() => {
+    if (isTauri()) {
+      void getCurrentWindow()
+        .isFullscreen()
+        .then(setFullscreen)
+        .catch(() => undefined)
+    }
     const sync = (event: Event) => {
       const detail = (event as CustomEvent<{ fullscreen?: boolean }>).detail
       if (typeof detail?.fullscreen === 'boolean') {
@@ -746,9 +836,59 @@ export function ReaderPage() {
         ].filter((item): item is { path: string; index: number } => Boolean(item.path))
       : []
 
+  const contentPadLeft = panelCollapsed ? 20 : 304
+
   return (
     <div className="relative h-full overflow-hidden fy-reader-ambient text-[var(--fy-text)]">
-      <aside className="fy-liquid-glass fy-reader-glass absolute bottom-3 left-3 top-3 z-20 flex w-[280px] flex-col overflow-hidden rounded-[28px]">
+      {panelCollapsed ? (
+        <div className="absolute left-3 top-3 z-20 flex flex-col gap-2">
+          <button
+            type="button"
+            aria-label="Open reader sidebar"
+            title="Reader controls"
+            className="fy-liquid-glass fy-reader-glass flex size-10 items-center justify-center rounded-2xl text-[var(--fy-text)] shadow-lg"
+            onClick={() => setPanelCollapsed(false)}
+          >
+            <PanelLeft size={16} className="relative z-[1]" />
+          </button>
+          <button
+            type="button"
+            aria-label="Close reader"
+            title="Close reader"
+            className="fy-liquid-glass fy-reader-glass flex size-10 items-center justify-center rounded-2xl text-[var(--fy-text-muted)] shadow-lg hover:text-[var(--fy-text)]"
+            onClick={() => navigate(backTarget())}
+          >
+            <X size={16} className="relative z-[1]" />
+          </button>
+          {mode === 'vertical' ? (
+            <button
+              type="button"
+              aria-label={autoScroll ? 'Pause auto-scroll' : 'Start auto-scroll'}
+              title={autoScroll ? 'Pause auto-scroll' : 'Auto-scroll'}
+              className="fy-liquid-glass fy-reader-glass flex size-10 items-center justify-center rounded-2xl text-[var(--fy-text)] shadow-lg"
+              onClick={() => {
+                autoScrollPausedRef.current = false
+                setAutoScroll((value) => !value)
+              }}
+            >
+              {autoScroll ? (
+                <Pause size={16} className="relative z-[1]" />
+              ) : (
+                <Play size={16} className="relative z-[1]" />
+              )}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <aside
+        className={cn(
+          'fy-liquid-glass fy-reader-glass absolute bottom-3 left-3 top-3 z-20 flex w-[280px] flex-col overflow-hidden rounded-[28px] transition-all duration-300',
+          panelCollapsed
+            ? 'pointer-events-none -translate-x-[120%] opacity-0'
+            : 'translate-x-0 opacity-100',
+        )}
+      >
         <div className="relative z-[1] border-b border-[var(--fy-border-subtle)] px-3 py-3">
           <div className="mb-2 flex items-start gap-2">
             <button
@@ -778,6 +918,15 @@ export function ReaderPage() {
                 {sessionIncognito ? ' · Incognito' : ''}
               </div>
             </div>
+            <button
+              type="button"
+              aria-label="Collapse reader sidebar"
+              title="Collapse sidebar"
+              className="mt-0.5 rounded-md p-1 text-[var(--fy-text-muted)] hover:bg-[var(--fy-nav-active)] hover:text-[var(--fy-text)]"
+              onClick={() => setPanelCollapsed(true)}
+            >
+              <PanelLeft size={16} />
+            </button>
           </div>
 
           <div className="mt-3 flex items-center gap-1">
@@ -917,6 +1066,47 @@ export function ReaderPage() {
                 Side gutters for webtoon strips and page spreads. Saved on this device.
               </p>
             </div>
+            {mode === 'vertical' ? (
+              <div className="mt-3 space-y-2 border-t border-[var(--fy-border-subtle)] pt-3">
+                <label className="flex items-center justify-between gap-2 text-xs text-[var(--fy-text-muted)]">
+                  <span>Auto-scroll</span>
+                  <button
+                    type="button"
+                    aria-pressed={autoScroll}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]',
+                      autoScroll
+                        ? 'border-[var(--fy-border)] bg-[var(--fy-nav-active)] text-[var(--fy-text)]'
+                        : 'border-[var(--fy-border-subtle)] text-[var(--fy-text-muted)]',
+                    )}
+                    onClick={() => {
+                      autoScrollPausedRef.current = false
+                      setAutoScroll((value) => !value)
+                    }}
+                  >
+                    {autoScroll ? <Pause size={12} /> : <Play size={12} />}
+                    {autoScroll ? 'On' : 'Off'}
+                  </button>
+                </label>
+                <label className="block text-xs text-[var(--fy-text-muted)]">
+                  Speed ({autoScrollSpeed}px/s)
+                  <input
+                    type="range"
+                    min={18}
+                    max={120}
+                    step={2}
+                    value={autoScrollSpeed}
+                    disabled={!autoScroll}
+                    onChange={(e) => setAutoScrollSpeed(Number(e.target.value))}
+                    className="mt-1 w-full"
+                  />
+                </label>
+                <p className="text-[10px] leading-snug text-[var(--fy-text-muted)]">
+                  Scrolls slowly through the chapter. Wheel or drag pauses briefly; end
+                  continues to the next chapter.
+                </p>
+              </div>
+            ) : null}
           </SidebarSection>
 
           <SidebarSection
@@ -1021,6 +1211,7 @@ export function ReaderPage() {
       <ReaderKeyboardCheatsheet
         open={cheatsheetOpen}
         onClose={() => setCheatsheetOpen(false)}
+        insetLeft={contentPadLeft}
       />
 
       <main className="absolute inset-0 z-0">
@@ -1047,11 +1238,24 @@ export function ReaderPage() {
           <div
             ref={scrollRef}
             className="h-full overflow-y-auto overscroll-contain py-4"
-            style={{ paddingRight: padding.padXPx, paddingLeft: 304 + padding.padXPx }}
+            style={{ paddingRight: padding.padXPx, paddingLeft: contentPadLeft + padding.padXPx }}
+            onWheel={() => pauseAutoScrollBriefly()}
+            onPointerDown={() => pauseAutoScrollBriefly()}
             onScroll={(e) => {
               const el = e.currentTarget
-              const ratio = el.scrollTop / Math.max(el.scrollHeight - el.clientHeight, 1)
+              const maxScroll = Math.max(el.scrollHeight - el.clientHeight, 1)
+              const ratio = el.scrollTop / maxScroll
               void persistProgress(pageIndex, ratio)
+              // Webtoon / vertical: reaching the bottom continues into the next chapter.
+              const nearEnd = maxScroll - el.scrollTop <= 48 || ratio >= 0.985
+              if (
+                nearEnd &&
+                !pagesLoading &&
+                session &&
+                chapterIndex < session.chapters.length - 1
+              ) {
+                void goChapter(1)
+              }
             }}
           >
             <div
@@ -1076,7 +1280,7 @@ export function ReaderPage() {
         ) : mode === 'double' ? (
           <div
             className="relative flex h-full items-center justify-center overflow-auto py-4"
-            style={{ paddingRight: padding.padXPx, paddingLeft: 304 + padding.padXPx }}
+            style={{ paddingRight: padding.padXPx, paddingLeft: contentPadLeft + padding.padXPx }}
           >
             {pageImages.length === 0 ? (
               <p className="text-[var(--fy-text-muted)]">No page image</p>
@@ -1109,7 +1313,7 @@ export function ReaderPage() {
         ) : (
           <div
             className="relative flex h-full items-center justify-center overflow-auto py-4"
-            style={{ paddingRight: padding.padXPx, paddingLeft: 304 + padding.padXPx }}
+            style={{ paddingRight: padding.padXPx, paddingLeft: contentPadLeft + padding.padXPx }}
           >
             {pages.length === 0 ? (
               <p className="text-[var(--fy-text-muted)]">No page image</p>

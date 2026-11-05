@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
+  ArrowLeft,
+  ArrowRight,
   CheckCheck,
   Download,
   FolderOpen,
@@ -34,6 +36,7 @@ import {
   deleteCategory,
   getTitleCategoryId,
   listCategories,
+  moveCategory,
   subscribeLibraryCategories,
   type LibraryCategory,
 } from '@/lib/library-categories'
@@ -186,17 +189,24 @@ export function LibraryPage() {
   }, [categoryMenu])
 
   function removeCategory(category: LibraryCategory) {
-    if (category.builtin) {
-      toast.error('Built-in categories can’t be deleted')
-      setCategoryMenu(null)
-      return
-    }
     deleteCategory(category.id)
     setCategories(listCategories())
     if (activeCategory === category.id) setActiveCategory('all')
     setCategoryMenu(null)
     toast.success('Category deleted', { description: category.name })
   }
+
+  function shiftCategory(category: LibraryCategory, direction: -1 | 1) {
+    moveCategory(category.id, direction)
+    setCategories(listCategories())
+    setCategoryMenu(null)
+  }
+
+  useEffect(() => {
+    if (activeCategory !== 'all' && !categories.some((category) => category.id === activeCategory)) {
+      setActiveCategory('all')
+    }
+  }, [categories, activeCategory])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -527,17 +537,37 @@ export function LibraryPage() {
               <button
                 type="button"
                 role="menuitem"
-                className="fy-menu-item gap-2 text-[var(--fy-danger)]"
-                disabled={Boolean(categoryMenu.category.builtin)}
-                title={
-                  categoryMenu.category.builtin
-                    ? 'Built-in categories can’t be deleted'
-                    : undefined
+                className="fy-menu-item gap-2"
+                disabled={
+                  categories.findIndex((c) => c.id === categoryMenu.category.id) <= 0
                 }
+                onClick={() => shiftCategory(categoryMenu.category, -1)}
+              >
+                <ArrowLeft size={14} />
+                Move left
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="fy-menu-item gap-2"
+                disabled={
+                  categories.findIndex((c) => c.id === categoryMenu.category.id) >=
+                  categories.length - 1
+                }
+                onClick={() => shiftCategory(categoryMenu.category, 1)}
+              >
+                <ArrowRight size={14} />
+                Move right
+              </button>
+              <div className="mx-3 my-1 border-t border-[var(--fy-border-subtle)]" />
+              <button
+                type="button"
+                role="menuitem"
+                className="fy-menu-item gap-2 text-[var(--fy-danger)]"
                 onClick={() => removeCategory(categoryMenu.category)}
               >
                 <Trash2 size={14} />
-                {categoryMenu.category.builtin ? 'Can’t delete' : 'Delete category'}
+                Delete category
               </button>
             </div>,
             document.body,

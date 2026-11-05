@@ -180,7 +180,6 @@ export function DiscoverPage() {
     return groups
   }, [report, contentType, status, sort])
 
-  const hasFailures = Boolean(report?.outcomes.some((item) => !item.ok && !item.cancelled))
   const hasResults = filteredGroups.length > 0
 
   return (
@@ -296,21 +295,6 @@ export function DiscoverPage() {
         />
       ) : (
         <div className="space-y-4">
-          {hasFailures ? (
-            <div className="fy-liquid-tile px-3 py-2 text-sm text-[var(--fy-text-muted)]">
-              Some providers failed or timed out, but successful results are shown below.
-              <ul className="mt-2 space-y-1 font-mono text-[11px]">
-                {report.outcomes
-                  .filter((item) => !item.ok)
-                  .map((item) => (
-                    <li key={item.providerId}>
-                      {item.providerName}: {item.timedOut ? 'timeout' : item.error}
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          ) : null}
-
           <p className="font-mono text-[11px] text-[var(--fy-text-muted)]">
             {filteredGroups.length} title{filteredGroups.length === 1 ? '' : 's'}
             {filteredGroups.length !== report.groups.length
