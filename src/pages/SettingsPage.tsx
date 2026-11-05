@@ -3,6 +3,7 @@ import { open, save } from '@tauri-apps/plugin-dialog'
 
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
+import { Select } from '@/components/ui/Select'
 import { useTheme } from '@/app/ThemeProvider'
 import { api, isTauri } from '@/lib/api'
 import {
@@ -264,17 +265,18 @@ export function SettingsPage() {
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
               Cover layout (Library, Discover, …)
-              <select
+              <Select
                 value={display.mode}
-                onChange={(e) =>
-                  patchDisplay({ mode: e.target.value as LibraryDisplayPrefs['mode'] })
+                onChange={(value) =>
+                  patchDisplay({ mode: value as LibraryDisplayPrefs['mode'] })
                 }
                 className="mt-1 w-full rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-3 py-2"
-              >
-                <option value="grid">Grid</option>
-                <option value="details">Details</option>
-                <option value="compact">Compact</option>
-              </select>
+                options={[
+                  { value: 'grid', label: 'Grid' },
+                  { value: 'details', label: 'Details' },
+                  { value: 'compact', label: 'Compact' },
+                ]}
+              />
             </label>
             <label className="text-sm">
               Grid size ({display.gridSize})
@@ -376,33 +378,35 @@ export function SettingsPage() {
           </div>
           <label className="mb-2 block text-sm">
             Content preloading
-            <select
+            <Select
               value={prefs.contentPreloading}
-              onChange={(e) =>
+              onChange={(value) =>
                 patchPrefs({
-                  contentPreloading: e.target.value as AppPrefs['contentPreloading'],
+                  contentPreloading: value as AppPrefs['contentPreloading'],
                 })
               }
               className="mt-1 w-full rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-3 py-2"
-            >
-              <option value="never">Never</option>
-              <option value="wifi">Only on Wi-Fi</option>
-              <option value="always">Always</option>
-            </select>
+              options={[
+                { value: 'never', label: 'Never' },
+                { value: 'wifi', label: 'Only on Wi-Fi' },
+                { value: 'always', label: 'Always' },
+              ]}
+            />
           </label>
           <label className="block text-sm">
             Preload pages
-            <select
+            <Select
               value={prefs.preloadPages}
-              onChange={(e) =>
-                patchPrefs({ preloadPages: e.target.value as AppPrefs['preloadPages'] })
+              onChange={(value) =>
+                patchPrefs({ preloadPages: value as AppPrefs['preloadPages'] })
               }
               className="mt-1 w-full rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-3 py-2"
-            >
-              <option value="never">Never</option>
-              <option value="wifi">Only on Wi-Fi</option>
-              <option value="always">Always</option>
-            </select>
+              options={[
+                { value: 'never', label: 'Never' },
+                { value: 'wifi', label: 'Only on Wi-Fi' },
+                { value: 'always', label: 'Always' },
+              ]}
+            />
           </label>
           <p className="mt-3 text-xs text-[var(--fy-text-muted)]">
             Proxy / DNS over HTTPS / image optimization proxy are not configured yet.
@@ -415,26 +419,28 @@ export function SettingsPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
               Default mode
-              <select
+              <Select
                 value={defaultMode}
-                onChange={(e) => setDefaultMode(e.target.value)}
+                onChange={setDefaultMode}
                 className="mt-1 w-full rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-3 py-2"
-              >
-                <option value="page">Single page</option>
-                <option value="double">Double page</option>
-                <option value="vertical">Webtoon / vertical</option>
-              </select>
+                options={[
+                  { value: 'page', label: 'Single page' },
+                  { value: 'double', label: 'Double page' },
+                  { value: 'vertical', label: 'Webtoon / vertical' },
+                ]}
+              />
             </label>
             <label className="text-sm">
               Default direction
-              <select
+              <Select
                 value={defaultDirection}
-                onChange={(e) => setDefaultDirection(e.target.value)}
+                onChange={setDefaultDirection}
                 className="mt-1 w-full rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-3 py-2"
-              >
-                <option value="ltr">Left to right</option>
-                <option value="rtl">Right to left</option>
-              </select>
+                options={[
+                  { value: 'ltr', label: 'Left to right' },
+                  { value: 'rtl', label: 'Right to left' },
+                ]}
+              />
             </label>
           </div>
           <div className="mt-3">

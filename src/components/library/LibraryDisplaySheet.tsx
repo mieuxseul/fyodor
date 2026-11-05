@@ -7,6 +7,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/Sheet'
+import { Select } from '@/components/ui/Select'
 import { cn } from '@/lib/cn'
 import {
   type LibraryDisplayMode,
@@ -102,18 +103,19 @@ export function LibraryDisplaySheet({
           <section>
             <label className="block text-xs font-medium text-[var(--fy-text-muted)]">
               Sorting order
-              <select
+              <Select
                 className="mt-1.5 w-full rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-3 py-2 text-sm text-[var(--fy-text)]"
                 value={prefs.sort}
-                onChange={(e) =>
-                  pick({ sort: e.target.value as LibraryDisplayPrefs['sort'] })
+                onChange={(value) =>
+                  pick({ sort: value as LibraryDisplayPrefs['sort'] })
                 }
-              >
-                <option value="added">Added</option>
-                <option value="recent">Recently opened</option>
-                <option value="title">Title</option>
-                <option value="progress">Progress</option>
-              </select>
+                options={[
+                  { value: 'added', label: 'Added' },
+                  { value: 'recent', label: 'Recently opened' },
+                  { value: 'title', label: 'Title' },
+                  { value: 'progress', label: 'Progress' },
+                ]}
+              />
             </label>
           </section>
         </div>

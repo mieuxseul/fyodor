@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/Button'
+import { Select } from '@/components/ui/Select'
 import { api, isTauri } from '@/lib/api'
 
 const ENABLED_SETTING = 'kotatsu_enabled_sources'
@@ -131,18 +132,15 @@ export function KotatsuCatalog() {
           placeholder="Filter sources…"
           className="min-w-[12rem] flex-1 rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-3 py-1.5 text-sm"
         />
-        <select
+        <Select
           value={locale}
-          onChange={(e) => setLocale(e.target.value)}
-          className="rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-2 py-1.5 text-sm"
-        >
-          <option value="all">All locales</option>
-          {locales.map((l) => (
-            <option key={l} value={l}>
-              {l}
-            </option>
-          ))}
-        </select>
+          onChange={setLocale}
+          className="rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-2.5 py-1.5 text-sm"
+          options={[
+            { value: 'all', label: 'All locales' },
+            ...locales.map((l) => ({ value: l, label: l })),
+          ]}
+        />
       </div>
 
       <ul className="mt-4 max-h-80 space-y-1 overflow-y-auto">

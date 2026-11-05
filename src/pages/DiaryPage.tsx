@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/Dialog'
+import { Select } from '@/components/ui/Select'
 import { EmptyState } from '@/components/ui/EmptyState'
 import {
   Sheet,
@@ -298,20 +299,18 @@ export function DiaryPage() {
             </label>
             <label className="block text-xs font-medium text-[var(--fy-text-muted)]">
               Rating (optional)
-              <select
-                value={rating ?? ''}
-                onChange={(e) =>
-                  setRating(e.target.value ? Number(e.target.value) : null)
-                }
+              <Select
+                value={rating == null ? '' : String(rating)}
+                onChange={(value) => setRating(value ? Number(value) : null)}
                 className="mt-1 w-full rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-3 py-2 text-sm"
-              >
-                <option value="">None</option>
-                {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: 'None' },
+                  ...[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((n) => ({
+                    value: String(n),
+                    label: String(n),
+                  })),
+                ]}
+              />
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -364,20 +363,18 @@ export function DiaryPage() {
             </label>
             <label className="block text-xs font-medium text-[var(--fy-text-muted)]">
               Rating
-              <select
-                value={rating ?? ''}
-                onChange={(e) =>
-                  setRating(e.target.value ? Number(e.target.value) : null)
-                }
+              <Select
+                value={rating == null ? '' : String(rating)}
+                onChange={(value) => setRating(value ? Number(value) : null)}
                 className="mt-1 w-full rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-3 py-2 text-sm"
-              >
-                <option value="">None</option>
-                {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: 'None' },
+                  ...[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((n) => ({
+                    value: String(n),
+                    label: String(n),
+                  })),
+                ]}
+              />
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input

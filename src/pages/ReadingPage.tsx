@@ -48,7 +48,7 @@ export function ReadingPage() {
           }
         />
       ) : display.mode === 'details' ? (
-        <div className="space-y-1.5">
+        <div className="divide-y divide-[var(--fy-border-subtle)]">
           {items.map((item) => (
             <CoverCard key={item.title.id} item={item} view="details" />
           ))}

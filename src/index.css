@@ -36,6 +36,7 @@
 
 :root,
 [data-theme="light"] {
+  color-scheme: light;
   --fy-bg: #e9ebf2;
   --fy-bg-glow: radial-gradient(90% 70% at 10% 0%, #f7f8fc 0%, transparent 55%),
     radial-gradient(70% 50% at 100% 20%, #dde3f0 0%, transparent 50%), #e9ebf2;
@@ -94,6 +95,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   --fy-bg: #0c0e14;
   --fy-bg-glow: radial-gradient(90% 70% at 8% 0%, #1a2030 0%, transparent 55%),
     radial-gradient(70% 55% at 100% 15%, #141824 0%, transparent 50%), #0c0e14;
@@ -231,6 +233,18 @@
   textarea {
     font: inherit;
     color: inherit;
+  }
+
+  /* Native <select> fallback — keep option lists readable in WebView2. */
+  select {
+    color: var(--fy-text);
+    background-color: var(--fy-panel-elevated);
+  }
+
+  select option,
+  select optgroup {
+    color: var(--fy-text);
+    background-color: var(--fy-panel-solid);
   }
 
   /* Kill browser-default blue on range sliders */
@@ -396,6 +410,7 @@
     border-radius: 0.625rem;
     padding: 0.5rem 0.625rem;
     text-align: left;
+    color: var(--fy-text);
     transition: background-color 120ms ease;
   }
 
@@ -407,33 +422,21 @@
     opacity: 0.5;
   }
 
-  /* Popovers / overflow menus — opaque enough that text underneath doesn't bleed. */
+  /* Popovers / overflow menus — theme tokens so text contrast stays correct. */
   .fy-liquid-menu {
-    background: linear-gradient(
-      165deg,
-      rgb(255 255 255 / 0.92) 0%,
-      rgb(248 249 252 / 0.94) 55%,
-      rgb(242 244 248 / 0.96) 100%
-    );
-    border: 1px solid var(--fy-liquid-border);
-    border-radius: 1.25rem;
-    box-shadow: 0 16px 40px rgb(15 23 42 / 0.14),
-      inset 0 1px 0 rgb(255 255 255 / 0.7);
-    backdrop-filter: blur(56px) saturate(1.75) brightness(1.04);
-    -webkit-backdrop-filter: blur(56px) saturate(1.75) brightness(1.04);
+    color: var(--fy-text);
+    background: var(--fy-panel-solid);
+    border: 1px solid var(--fy-border-subtle);
+    border-radius: 0.875rem;
+    box-shadow: 0 16px 40px rgb(15 23 42 / 0.18),
+      inset 0 1px 0 rgb(255 255 255 / 0.08);
+    backdrop-filter: blur(40px) saturate(1.25);
+    -webkit-backdrop-filter: blur(40px) saturate(1.25);
   }
 
   [data-theme="dark"] .fy-liquid-menu {
-    background: linear-gradient(
-      165deg,
-      #1a1a1a 0%,
-      #141414 55%,
-      #101010 100%
-    );
     box-shadow: 0 16px 40px rgb(0 0 0 / 0.55),
-      inset 0 1px 0 rgb(255 255 255 / 0.08);
-    backdrop-filter: blur(40px) saturate(1.1);
-    -webkit-backdrop-filter: blur(40px) saturate(1.1);
+      inset 0 1px 0 rgb(255 255 255 / 0.06);
   }
 
   [data-theme="dark"] .fy-liquid-tile,

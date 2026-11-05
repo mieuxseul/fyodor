@@ -82,7 +82,7 @@ export function CoverCard({ item, view = 'grid', pinned }: CoverCardProps) {
     return (
       <Link
         to={href}
-        className="fy-liquid-tile flex items-center gap-3 rounded-md px-2.5 py-2 transition-colors hover:border-[var(--fy-accent)]"
+        className="flex items-center gap-3 px-1 py-2.5 transition-colors hover:bg-[var(--fy-nav-hover)]"
       >
         <div className="relative h-16 w-11 shrink-0 overflow-hidden rounded-sm bg-[var(--fy-bg)]">
           <RemoteCover

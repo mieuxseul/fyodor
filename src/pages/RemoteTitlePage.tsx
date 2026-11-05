@@ -7,6 +7,7 @@ import { RemoteCover } from '@/components/RemoteCover'
 import { TitleSocialControls } from '@/components/social/TitleSocialControls'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Select } from '@/components/ui/Select'
 import { toast } from '@/components/ui/Toaster'
 import {
   Sheet,
@@ -646,15 +647,16 @@ export function RemoteTitlePage() {
               placeholder="Filter…"
               className="w-36 rounded-md border border-[var(--fy-border-subtle)] bg-transparent px-2.5 py-1.5 text-sm outline-none focus:border-[var(--fy-border)]"
             />
-            <select
+            <Select
               value={chapterSort}
-              onChange={(e) => setChapterSort(e.target.value as 'asc' | 'desc')}
-              className="rounded-md border border-[var(--fy-border-subtle)] bg-transparent px-2 py-1.5 text-sm"
+              onChange={(value) => setChapterSort(value as 'asc' | 'desc')}
+              className="rounded-md border border-[var(--fy-border-subtle)] bg-[var(--fy-panel-elevated)] px-2.5 py-1.5 text-sm"
               aria-label="Chapter sort order"
-            >
-              <option value="desc">Newest</option>
-              <option value="asc">Oldest</option>
-            </select>
+              options={[
+                { value: 'desc', label: 'Newest' },
+                { value: 'asc', label: 'Oldest' },
+              ]}
+            />
           </div>
         </div>
 

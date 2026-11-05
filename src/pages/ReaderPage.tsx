@@ -27,6 +27,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ReaderKeyboardCheatsheet } from '@/components/reader/ReaderKeyboardCheatsheet'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Select } from '@/components/ui/Select'
 import { api, isTauri, resolveRemoteImageUrl, toAssetUrl, toFyodorCdnUrl } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { FULLSCREEN_EVENT } from '@/hooks/useF11Fullscreen'
@@ -789,19 +790,18 @@ export function ReaderPage() {
             >
               <ChevronLeft size={16} />
             </button>
-            <select
+            <Select
               className="min-w-0 flex-1 truncate fy-liquid-control px-2 py-1.5 text-xs outline-none focus:border-[var(--fy-border)]"
               value={chapterId ?? ''}
               disabled={pagesLoading}
-              onChange={(e) => void loadChapter(e.target.value, 0)}
+              onChange={(value) => void loadChapter(value, 0)}
               aria-label="Select chapter"
-            >
-              {session.chapters.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.title}
-                </option>
-              ))}
-            </select>
+              placement="top"
+              options={session.chapters.map((item) => ({
+                value: item.id,
+                label: item.title,
+              }))}
+            />
             <button
               type="button"
               aria-label="Next chapter"
@@ -871,26 +871,28 @@ export function ReaderPage() {
           >
             <label className="block text-xs text-[var(--fy-text-muted)]">
               Mode
-              <select
+              <Select
                 className="mt-1 w-full fy-liquid-control px-2 py-1.5 text-sm text-[var(--fy-text)]"
                 value={mode}
-                onChange={(e) => setMode(normalizeReadingMode(e.target.value))}
-              >
-                <option value="page">Single page</option>
-                <option value="double">Double page</option>
-                <option value="vertical">Webtoon / vertical</option>
-              </select>
+                onChange={(value) => setMode(normalizeReadingMode(value))}
+                options={[
+                  { value: 'page', label: 'Single page' },
+                  { value: 'double', label: 'Double page' },
+                  { value: 'vertical', label: 'Webtoon / vertical' },
+                ]}
+              />
             </label>
             <label className="mt-2 block text-xs text-[var(--fy-text-muted)]">
               Direction
-              <select
+              <Select
                 className="mt-1 w-full fy-liquid-control px-2 py-1.5 text-sm text-[var(--fy-text)]"
                 value={direction}
-                onChange={(e) => setDirection(e.target.value as ReadingDirection)}
-              >
-                <option value="ltr">Left to right</option>
-                <option value="rtl">Right to left</option>
-              </select>
+                onChange={(value) => setDirection(value as ReadingDirection)}
+                options={[
+                  { value: 'ltr', label: 'Left to right' },
+                  { value: 'rtl', label: 'Right to left' },
+                ]}
+              />
             </label>
             <div className="mt-3">
               <div className="mb-1.5 text-xs text-[var(--fy-text-muted)]">Edge padding</div>

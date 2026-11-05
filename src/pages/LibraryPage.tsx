@@ -601,7 +601,7 @@ export function LibraryPage() {
           }
         />
       ) : display.mode === 'details' ? (
-        <div className="space-y-1.5">
+        <div className="divide-y divide-[var(--fy-border-subtle)]">
           {filtered.map((item) => (
             <div key={item.title.id} className="flex items-center gap-2">
               {selectMode ? (

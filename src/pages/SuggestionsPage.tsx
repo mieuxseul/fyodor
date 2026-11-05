@@ -133,7 +133,7 @@ export function SuggestionsPage() {
           description="Enter a title or genre, or open a book and tap Find similar / Suggestions."
         />
       ) : display.mode === 'details' ? (
-        <div className="space-y-1.5">
+        <div className="divide-y divide-[var(--fy-border-subtle)]">
           {groups.map((group) => (
             <DiscoverCoverCard
               key={group.groupId}

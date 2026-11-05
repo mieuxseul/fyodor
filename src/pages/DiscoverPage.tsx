@@ -6,6 +6,7 @@ import { DiscoverGridSkeleton } from '@/components/discover/DiscoverGridSkeleton
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Select } from '@/components/ui/Select'
 import { useDisplayPrefs } from '@/hooks/useDisplayPrefs'
 import { recordKnownChapterCount } from '@/lib/chapter-seen'
 import { cn } from '@/lib/cn'
@@ -218,39 +219,42 @@ export function DiscoverPage() {
       </form>
 
       <div className="mb-3 flex flex-wrap gap-1.5">
-        <select
+        <Select
           value={contentType}
-          onChange={(e) => setContentType(e.target.value)}
-          className="fy-liquid-tile px-2 py-1.5 text-xs"
+          onChange={setContentType}
+          className="fy-liquid-tile px-2.5 py-1.5 text-xs"
           aria-label="Filter by content type"
-        >
-          <option value="all">All types</option>
-          <option value="manga">Manga</option>
-          <option value="manhwa">Manhwa</option>
-          <option value="comic">Comic / Manhua</option>
-        </select>
-        <select
+          options={[
+            { value: 'all', label: 'All types' },
+            { value: 'manga', label: 'Manga' },
+            { value: 'manhwa', label: 'Manhwa' },
+            { value: 'comic', label: 'Comic / Manhua' },
+          ]}
+        />
+        <Select
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="fy-liquid-tile px-2 py-1.5 text-xs"
+          onChange={setStatus}
+          className="fy-liquid-tile px-2.5 py-1.5 text-xs"
           aria-label="Filter by publication status"
-        >
-          <option value="all">All statuses</option>
-          <option value="ongoing">Ongoing</option>
-          <option value="completed">Completed</option>
-          <option value="hiatus">Hiatus</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
-        <select
+          options={[
+            { value: 'all', label: 'All statuses' },
+            { value: 'ongoing', label: 'Ongoing' },
+            { value: 'completed', label: 'Completed' },
+            { value: 'hiatus', label: 'Hiatus' },
+            { value: 'cancelled', label: 'Cancelled' },
+          ]}
+        />
+        <Select
           value={sort}
-          onChange={(e) => setSort(e.target.value)}
-          className="fy-liquid-tile px-2 py-1.5 text-xs"
+          onChange={setSort}
+          className="fy-liquid-tile px-2.5 py-1.5 text-xs"
           aria-label="Sort results"
-        >
-          <option value="title">Sort by title</option>
-          <option value="type">Sort by type</option>
-          <option value="status">Sort by status</option>
-        </select>
+          options={[
+            { value: 'title', label: 'Sort by title' },
+            { value: 'type', label: 'Sort by type' },
+            { value: 'status', label: 'Sort by status' },
+          ]}
+        />
       </div>
 
       {actionError ? <p className="mb-4 text-sm text-[var(--fy-danger)]">{actionError}</p> : null}
@@ -315,7 +319,7 @@ export function DiscoverPage() {
           </p>
 
           {display.mode === 'details' ? (
-            <div className="space-y-1.5">
+            <div className="divide-y divide-[var(--fy-border-subtle)]">
               {filteredGroups.map((group) => (
                 <DiscoverCoverCard
                   key={group.groupId}

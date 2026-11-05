@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/Dialog'
+import { Select } from '@/components/ui/Select'
 import { EmptyState } from '@/components/ui/EmptyState'
 import {
   Sheet,
@@ -422,17 +423,12 @@ export function TitleDetailsPage() {
         <div className="space-y-8">
           <section className="space-y-3 fy-liquid-tile p-4">
             <h2 className="text-xl font-semibold tracking-tight">Category</h2>
-            <select
+            <Select
               value={categoryId}
-              onChange={(e) => void assignCategory(e.target.value)}
+              onChange={(value) => void assignCategory(value)}
               className="w-full rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-3 py-2 text-sm"
-            >
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name}
-                </option>
-              ))}
-            </select>
+              options={categories.map((cat) => ({ value: cat.id, label: cat.name }))}
+            />
             <div className="flex flex-wrap gap-2">
               <input
                 value={newCategoryName}
@@ -620,26 +616,28 @@ export function TitleDetailsPage() {
             <div className="grid grid-cols-2 gap-2">
               <label className="block text-sm">
                 Direction
-                <select
+                <Select
                   value={direction}
-                  onChange={(e) => setDirection(e.target.value)}
+                  onChange={setDirection}
                   className="mt-1 w-full rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-2 py-2"
-                >
-                  <option value="ltr">LTR</option>
-                  <option value="rtl">RTL</option>
-                </select>
+                  options={[
+                    { value: 'ltr', label: 'LTR' },
+                    { value: 'rtl', label: 'RTL' },
+                  ]}
+                />
               </label>
               <label className="block text-sm">
                 Mode
-                <select
+                <Select
                   value={mode}
-                  onChange={(e) => setMode(e.target.value)}
+                  onChange={setMode}
                   className="mt-1 w-full rounded-sm border border-[var(--fy-border-subtle)] bg-[var(--fy-bg)] px-2 py-2"
-                >
-                  <option value="page">Single</option>
-                  <option value="double">Double</option>
-                  <option value="vertical">Webtoon</option>
-                </select>
+                  options={[
+                    { value: 'page', label: 'Single' },
+                    { value: 'double', label: 'Double' },
+                    { value: 'vertical', label: 'Webtoon' },
+                  ]}
+                />
               </label>
             </div>
             <Button variant="secondary" onClick={() => void changeCover()}>
