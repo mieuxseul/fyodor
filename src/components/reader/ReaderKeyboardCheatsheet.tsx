@@ -30,18 +30,20 @@ export function ReaderKeyboardCheatsheet({
       onClick={onClose}
     >
       <div
-        className="fy-liquid-glass fy-reader-glass fy-reader-cheatsheet relative w-full max-w-md overflow-hidden rounded-[24px]"
+        className="fy-reader-cheatsheet relative w-full max-w-md overflow-hidden rounded-[24px] border border-[var(--fy-border-subtle)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="relative z-[1] flex items-center justify-between border-b border-[var(--fy-border-subtle)] px-4 py-3">
           <div className="flex items-center gap-2">
-            <Keyboard size={16} className="text-[var(--fy-text-muted)]" />
-            <h2 className="text-sm font-semibold tracking-tight">Keyboard shortcuts</h2>
+            <Keyboard size={16} className="text-[var(--fy-text)]" />
+            <h2 className="text-sm font-semibold tracking-tight text-[var(--fy-text)]">
+              Keyboard shortcuts
+            </h2>
           </div>
           <button
             type="button"
             aria-label="Close shortcuts"
-            className="rounded-md p-1 text-[var(--fy-text-muted)] hover:bg-[var(--fy-nav-active)] hover:text-[var(--fy-text)]"
+            className="rounded-md p-1 text-[var(--fy-text)] hover:bg-[var(--fy-nav-active)]"
             onClick={onClose}
           >
             <X size={16} />
@@ -51,7 +53,7 @@ export function ReaderKeyboardCheatsheet({
         <div className="relative z-[1] max-h-[min(70vh,28rem)] space-y-4 overflow-y-auto px-4 py-3">
           {READER_SHORTCUT_GROUPS.map((group) => (
             <section key={group}>
-              <h3 className="mb-2 font-mono text-[10px] uppercase tracking-wide text-[var(--fy-text-muted)]">
+              <h3 className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-wide text-[var(--fy-text)] opacity-70">
                 {group}
               </h3>
               <ul className="space-y-1.5">
@@ -60,12 +62,12 @@ export function ReaderKeyboardCheatsheet({
                     key={`${group}-${item.action}`}
                     className="flex items-start justify-between gap-3 text-sm"
                   >
-                    <span className="text-[var(--fy-text-muted)]">{item.action}</span>
+                    <span className="font-medium text-[var(--fy-text)]">{item.action}</span>
                     <span className="flex shrink-0 flex-wrap justify-end gap-1">
                       {item.keys.map((key) => (
                         <kbd
                           key={key}
-                          className="rounded border border-[var(--fy-border-subtle)] bg-[var(--fy-nav-active)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--fy-text)]"
+                          className="rounded border border-[var(--fy-border)] bg-[var(--fy-nav-active)] px-1.5 py-0.5 font-mono text-[11px] font-semibold text-[var(--fy-text)]"
                         >
                           {key}
                         </kbd>

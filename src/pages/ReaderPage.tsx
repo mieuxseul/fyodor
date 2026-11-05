@@ -48,9 +48,17 @@ import {
   normalizeReadingMode,
   pageRangeLabel,
   pageStepForMode,
+  persistReadingDirection,
+  persistReadingMode,
+  resolveReadingDirection,
+  resolveReadingMode,
   setEdgePaddingPreset,
   type EdgePaddingPreset,
 } from '@/lib/reader-layout'
+import {
+  recordReadingOpen,
+  touchReadingHistoryChapter,
+} from '@/lib/reading-history'
 import { loadRemoteProgress, saveRemoteProgress } from '@/lib/remote-progress'
 import { decodeKotatsuTitleId } from '@/source-network/providers/kotatsu'
 import type {
@@ -150,8 +158,8 @@ export function ReaderPage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
-  /** Reader chrome starts collapsed so the page is immersive by default. */
-  const [panelCollapsed, setPanelCollapsed] = useState(true)
+  /** Reader chrome starts open; click outside collapses it. */
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
   const [autoScroll, setAutoScroll] = useState(false)
   const [autoScrollSpeed, setAutoScrollSpeed] = useState(42)
   const [error, setError] = useState<string | null>(null)
@@ -395,8 +403,19 @@ export function ReaderPage() {
             chapters,
           )
           setSession(built)
-          setMode(contentType === 'manhwa' ? 'vertical' : 'page')
-          setDirection('ltr')
+          setMode(
+            resolveReadingMode({
+              editionId: built.edition.id,
+              editionMode: built.edition.readingMode,
+              contentType,
+            }),
+          )
+          setDirection(
+            resolveReadingDirection({
+              editionId: built.edition.id,
+              editionDirection: built.edition.readingDirection,
+            }),
+          )
 
           const saved = loadRemoteProgress(remoteSession.provider, remoteSession.mangaId)
           const initialChapter =
@@ -409,6 +428,19 @@ export function ReaderPage() {
             requestedChapter && requestedChapter !== saved?.chapterId
               ? 0
               : (saved?.pageIndex ?? 0)
+          if (!shouldSuppressActivity(editionId, built.title.id, built.edition.id)) {
+            const chapter = built.chapters.find((c) => c.id === initialChapter)
+            recordReadingOpen({
+              titleId: built.title.id,
+              editionId: built.edition.id,
+              primaryTitle: built.title.primaryTitle,
+              coverPath: built.title.coverPath,
+              chapterId: initialChapter,
+              chapterTitle: chapter?.title ?? null,
+              providerId: remoteSession.provider,
+              providerTitleId: remoteSession.mangaId,
+            })
+          }
           try {
             await loadChapterRef.current(initialChapter, restorePage)
           } catch {
@@ -423,14 +455,38 @@ export function ReaderPage() {
         )
         if (cancelled) return
         setSession(data)
-        setMode(normalizeReadingMode(data.edition.readingMode))
-        setDirection((data.edition.readingDirection as ReadingDirection) || 'ltr')
+        setMode(
+          resolveReadingMode({
+            editionId: data.edition.id,
+            editionMode: data.edition.readingMode,
+            contentType: data.title.contentType,
+          }),
+        )
+        setDirection(
+          resolveReadingDirection({
+            editionId: data.edition.id,
+            editionDirection: data.edition.readingDirection,
+          }),
+        )
 
         const initialChapter =
           requestedChapter || data.progress?.chapterId || data.chapters[0]?.id || null
         if (!initialChapter) {
           setError('No chapters available for this edition.')
           return
+        }
+        if (!shouldSuppressActivity(editionId, data.title.id, data.edition.id)) {
+          const chapter = data.chapters.find((c) => c.id === initialChapter)
+          recordReadingOpen({
+            titleId: data.title.id,
+            editionId: data.edition.id,
+            primaryTitle: data.title.primaryTitle,
+            coverPath: data.title.coverPath,
+            chapterId: initialChapter,
+            chapterTitle: chapter?.title ?? null,
+            providerId: data.edition.providerId,
+            providerTitleId: data.edition.providerTitleId,
+          })
         }
         try {
           await loadChapterRef.current(
@@ -481,6 +537,24 @@ export function ReaderPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!session || !chapterId) return
+    if (shouldSuppressActivity(editionId, session.title.id, session.edition.id)) return
+    const chapter = session.chapters.find((c) => c.id === chapterId)
+    touchReadingHistoryChapter(
+      editionId,
+      { id: chapterId, title: chapter?.title },
+      remote
+        ? { providerId: remote.provider, providerTitleId: remote.mangaId }
+        : session.edition.providerId && session.edition.providerTitleId
+          ? {
+              providerId: session.edition.providerId,
+              providerTitleId: session.edition.providerTitleId,
+            }
+          : null,
+    )
+  }, [chapterId, editionId, remote, session, privacyTick])
 
   const goChapter = useCallback(
     async (delta: number) => {
@@ -840,6 +914,15 @@ export function ReaderPage() {
 
   return (
     <div className="relative h-full overflow-hidden fy-reader-ambient text-[var(--fy-text)]">
+      {!panelCollapsed ? (
+        <button
+          type="button"
+          aria-label="Close reader sidebar"
+          className="absolute inset-0 z-[15] cursor-default bg-transparent"
+          onClick={() => setPanelCollapsed(true)}
+        />
+      ) : null}
+
       {panelCollapsed ? (
         <div className="absolute left-3 top-3 z-20 flex flex-col gap-2">
           <button
@@ -1023,7 +1106,19 @@ export function ReaderPage() {
               <Select
                 className="mt-1 w-full fy-liquid-control px-2 py-1.5 text-sm text-[var(--fy-text)]"
                 value={mode}
-                onChange={(value) => setMode(normalizeReadingMode(value))}
+                onChange={(value) => {
+                  const next = persistReadingMode(
+                    editionId,
+                    normalizeReadingMode(value),
+                  )
+                  setMode(next)
+                  if (!isRemote && session?.title.id && isTauri()) {
+                    void api.updateTitle({
+                      id: session.title.id,
+                      readingMode: next,
+                    })
+                  }
+                }}
                 options={[
                   { value: 'page', label: 'Single page' },
                   { value: 'double', label: 'Double page' },
@@ -1036,7 +1131,19 @@ export function ReaderPage() {
               <Select
                 className="mt-1 w-full fy-liquid-control px-2 py-1.5 text-sm text-[var(--fy-text)]"
                 value={direction}
-                onChange={(value) => setDirection(value as ReadingDirection)}
+                onChange={(value) => {
+                  const next = persistReadingDirection(
+                    editionId,
+                    value as ReadingDirection,
+                  )
+                  setDirection(next)
+                  if (!isRemote && session?.title.id && isTauri()) {
+                    void api.updateTitle({
+                      id: session.title.id,
+                      readingDirection: next,
+                    })
+                  }
+                }}
                 options={[
                   { value: 'ltr', label: 'Left to right' },
                   { value: 'rtl', label: 'Right to left' },

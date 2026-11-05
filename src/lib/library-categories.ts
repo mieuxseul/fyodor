@@ -153,6 +153,18 @@ export function moveCategory(id: string, direction: -1 | 1): void {
   write(store)
 }
 
+/** Replace category tab order (used by drag-and-drop). "All" stays outside this list. */
+export function setCategoryOrder(order: string[]): void {
+  const store = read()
+  const valid = new Set(listCategoryIds(store))
+  const next = order.filter((id) => id !== 'all' && valid.has(id))
+  for (const id of valid) {
+    if (!next.includes(id)) next.push(id)
+  }
+  store.order = next
+  write(store)
+}
+
 export function getTitleCategoryId(titleId: string, fallbackStatus?: string | null): string {
   const store = read()
   if (store.assignments[titleId]) return store.assignments[titleId]

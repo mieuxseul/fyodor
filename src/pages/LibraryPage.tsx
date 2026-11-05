@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft,
-  ArrowRight,
   CheckCheck,
   Download,
   FolderOpen,
@@ -36,7 +34,7 @@ import {
   deleteCategory,
   getTitleCategoryId,
   listCategories,
-  moveCategory,
+  setCategoryOrder,
   subscribeLibraryCategories,
   type LibraryCategory,
 } from '@/lib/library-categories'
@@ -188,6 +186,8 @@ export function LibraryPage() {
     }
   }, [categoryMenu])
 
+  const [draggingCategoryId, setDraggingCategoryId] = useState<string | null>(null)
+
   function removeCategory(category: LibraryCategory) {
     deleteCategory(category.id)
     setCategories(listCategories())
@@ -196,10 +196,17 @@ export function LibraryPage() {
     toast.success('Category deleted', { description: category.name })
   }
 
-  function shiftCategory(category: LibraryCategory, direction: -1 | 1) {
-    moveCategory(category.id, direction)
+  function reorderCategory(fromId: string, toId: string) {
+    if (fromId === toId) return
+    const ids = categories.map((category) => category.id)
+    const from = ids.indexOf(fromId)
+    const to = ids.indexOf(toId)
+    if (from < 0 || to < 0) return
+    const next = [...ids]
+    const [item] = next.splice(from, 1)
+    next.splice(to, 0, item)
+    setCategoryOrder(next)
     setCategories(listCategories())
-    setCategoryMenu(null)
   }
 
   useEffect(() => {
@@ -504,13 +511,31 @@ export function LibraryPage() {
             <button
               key={cat.id}
               type="button"
+              draggable
               className={cn(
-                'shrink-0 border-b-2 px-0.5 pb-2 text-sm font-medium transition-colors',
+                'shrink-0 cursor-grab border-b-2 px-0.5 pb-2 text-sm font-medium transition-colors active:cursor-grabbing',
                 activeCategory === cat.id
                   ? 'border-[var(--fy-text)] text-[var(--fy-text)]'
                   : 'border-transparent text-[var(--fy-text-muted)] hover:text-[var(--fy-text)]',
+                draggingCategoryId === cat.id && 'opacity-50',
               )}
               onClick={() => setActiveCategory(cat.id)}
+              onDragStart={(event) => {
+                setDraggingCategoryId(cat.id)
+                event.dataTransfer.effectAllowed = 'move'
+                event.dataTransfer.setData('text/plain', cat.id)
+              }}
+              onDragOver={(event) => {
+                event.preventDefault()
+                event.dataTransfer.dropEffect = 'move'
+              }}
+              onDrop={(event) => {
+                event.preventDefault()
+                const fromId = event.dataTransfer.getData('text/plain') || draggingCategoryId
+                if (fromId) reorderCategory(fromId, cat.id)
+                setDraggingCategoryId(null)
+              }}
+              onDragEnd={() => setDraggingCategoryId(null)}
               onContextMenu={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -534,32 +559,6 @@ export function LibraryPage() {
               }}
               onMouseDown={(event) => event.stopPropagation()}
             >
-              <button
-                type="button"
-                role="menuitem"
-                className="fy-menu-item gap-2"
-                disabled={
-                  categories.findIndex((c) => c.id === categoryMenu.category.id) <= 0
-                }
-                onClick={() => shiftCategory(categoryMenu.category, -1)}
-              >
-                <ArrowLeft size={14} />
-                Move left
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="fy-menu-item gap-2"
-                disabled={
-                  categories.findIndex((c) => c.id === categoryMenu.category.id) >=
-                  categories.length - 1
-                }
-                onClick={() => shiftCategory(categoryMenu.category, 1)}
-              >
-                <ArrowRight size={14} />
-                Move right
-              </button>
-              <div className="mx-3 my-1 border-t border-[var(--fy-border-subtle)]" />
               <button
                 type="button"
                 role="menuitem"

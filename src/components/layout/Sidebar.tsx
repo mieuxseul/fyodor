@@ -6,7 +6,6 @@ import {
   Library,
   PanelLeft,
   Settings,
-  Sparkles,
 } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router-dom'
 
@@ -31,7 +30,6 @@ const items = [
   { to: '/downloads', label: 'Downloads', icon: Download },
   { to: '/history', label: 'History', icon: History },
   { to: '/bookmarks', label: 'Bookmarks', icon: Bookmark },
-  { to: '/sources', label: 'Sources', icon: Sparkles },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 

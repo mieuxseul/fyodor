@@ -6,6 +6,8 @@ import {
   normalizeReadingMode,
   pageRangeLabel,
   pageStepForMode,
+  persistReadingMode,
+  resolveReadingMode,
   setEdgePaddingPreset,
 } from '@/lib/reader-layout'
 
@@ -42,5 +44,18 @@ describe('reader-layout', () => {
     expect(normalizeReadingMode('double')).toBe('double')
     expect(normalizeReadingMode('vertical')).toBe('vertical')
     expect(normalizeReadingMode('weird')).toBe('page')
+  })
+
+  it('remembers the last reading mode per title and as a global fallback', () => {
+    expect(
+      resolveReadingMode({ editionId: 'a', contentType: 'manga' }),
+    ).toBe('page')
+    persistReadingMode('a', 'vertical')
+    expect(resolveReadingMode({ editionId: 'a', editionMode: 'page' })).toBe(
+      'vertical',
+    )
+    expect(
+      resolveReadingMode({ editionId: 'b', contentType: 'manga' }),
+    ).toBe('vertical')
   })
 })

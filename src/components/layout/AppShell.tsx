@@ -9,11 +9,7 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/Sidebar'
 export function AppShell() {
   const location = useLocation()
   const isReader = location.pathname.startsWith('/reader')
-  const isReadingView =
-    location.pathname.startsWith('/title/') ||
-    location.pathname.startsWith('/remote/')
   const [searchOpen, setSearchOpen] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
   const mainRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
@@ -31,11 +27,7 @@ export function AppShell() {
     mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }, [location.pathname])
 
-  // Title / remote reading surfaces: keep nav chrome out of the way.
-  useEffect(() => {
-    if (isReadingView) setSidebarOpen(false)
-  }, [isReadingView, location.pathname])
-
+  // Reader uses its own chrome; keep the main app sidebar out of that route only.
   if (isReader) {
     return (
       <div key={location.pathname} className="fy-page-enter h-full">
@@ -45,11 +37,7 @@ export function AppShell() {
   }
 
   return (
-    <SidebarProvider
-      open={sidebarOpen}
-      onOpenChange={setSidebarOpen}
-      className="relative h-full min-h-0 overflow-hidden text-[var(--fy-text)]"
-    >
+    <SidebarProvider className="relative h-full min-h-0 overflow-hidden text-[var(--fy-text)]">
       <div aria-hidden className="fy-app-ambient pointer-events-none absolute inset-0" />
       <div
         aria-hidden
